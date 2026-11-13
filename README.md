@@ -1,53 +1,59 @@
-# `agy_template` — Modular Antigravity Starter & Engineering Governance Harness
+# `agy_template`
 
-> **Start every new project with the AI Engineering Manager workflow—without carrying a single line of unused skills, hooks, or CI boilerplate.**
+A modular starter template for building software with **Google Antigravity**.
 
-`agy_template` extracts the battle-tested Antigravity governance system evolved across 180+ commits and 100+ Pull Requests (concise `AGENTS.md` routing, lazy-loaded skills, multi-agent `pr-quality-gate`, parallel git worktree `parallel-pr-orchestrator`, `product-strategy-gate`, deterministic lifecycle hooks, and cloud/git automation) into a **plug-and-play template**.
-
-Fork or use this template, pick your stack once—via CLI or by asking Antigravity in plain language—and `./agy-init` **programmatically prunes** every irrelevant skill, hook, script, and pipeline, leaving a lean, zero-bloat governance harness ready for Day-1 feature development.
+AI coding assistants slow down and make mistakes when a repository is filled with rules and skills for tools you do not use. `agy_template` fixes that: you pick your tech stack once, and a small setup script deletes every unused skill, hook, script, and pipeline—leaving a clean workspace tailored to your project.
 
 ---
 
-## Architecture
+## How It Works
 
 ```mermaid
-flowchart LR
-    Core["core/<br/>Universal Governance<br/>(DRY/KISS/YAGNI/CAZZ, PR Gate,<br/>Parallel Worktrees, PreToolUse & Git Hooks)"]
-    Modules["modules/<br/>Plug-in Stack Catalog<br/>(FastAPI, React/Vite, Express,<br/>Firebase, GCP, Jira, GitHub, Bitbucket)"]
-    Init["./agy-init<br/>(Zero-Dep Python 3 Engine)"]
-    Workspace["Tailored Project Harness<br/>(AGENTS.md + .agents/ + .githooks/<br/>+ CI/CD + Cloud Scripts + .agy-manifest.json)"]
+flowchart TD
+    subgraph Source["agy_template"]
+        Core["core - Shared Best Practices"]
+        Catalog["modules - Tech Stack Options"]
+    end
+
+    Init["agy-init - Pick Your Stack"]
+
+    subgraph Project["Your Clean Repository"]
+        Skills["AGENTS.md and Matching Skills"]
+        Hooks["Git and AI Safety Hooks"]
+        Pipelines["CI Pipeline and Cloud Scripts"]
+    end
 
     Core --> Init
-    Modules --> Init
-    Init -->|"Selects Active Stack &<br/>Prunes Unused Scaffolding"| Workspace
+    Catalog --> Init
+    Init -->|"Removes unused files"| Project
 ```
 
 ---
 
-## 2-Minute Quick Start
+## Quick Start
 
 1. Click **Use this template** (or fork) on GitHub and clone your new repository.
-2. Initialize your stack using **Option A (Ask Antigravity)** or **Option B (CLI)**:
+2. Choose your stack using either **Antigravity** or the **CLI**:
 
-### Option A — Ask Antigravity AI
+### Option A — Ask Antigravity
 
-Open the cloned repository in Antigravity and tell the agent your stack:
+Open the cloned folder in Antigravity and tell it what you are building:
 
-> *"Configure this repository for a Python FastAPI, Firebase, Google Cloud, Jira (project key ORD), and Bitbucket project named Order API, and clean up unused template automations."*
+> *"Set up this repo for a Python FastAPI, Firebase, Google Cloud, Jira (key ORD), and Bitbucket project named Order API, and remove everything else."*
 
-Antigravity detects the uninitialized workspace via `.agents/hooks.json` (`SessionStart`), loads `.agents/skills/template-initializer/SKILL.md`, inspects `./agy-init --list-modules --json`, and runs `./agy-init` programmatically.
+Antigravity reads the available modules and runs `./agy-init` for you.
 
-### Option B — Run `./agy-init` Directly
+### Option B — Run `./agy-init`
 
-Run interactively in your terminal:
+Run the interactive wizard:
 ```sh
 ./agy-init
 ```
 
-Or non-interactively with explicit flags:
+Or pass your stack as flags:
 
 ```sh
-# Example 1: Python FastAPI + Firebase + GCP Cloud Run + Jira + Bitbucket
+# Python FastAPI + Firebase + GCP Cloud Run + Jira + Bitbucket
 ./agy-init \
   --project-name "Order API" \
   --frontend none \
@@ -59,7 +65,7 @@ Or non-interactively with explicit flags:
   --git-hosting bitbucket \
   --yes
 
-# Example 2: React/Vite + Node/Express + Firebase + GCP Cloud Run + GitHub
+# React/Vite + Node/Express + Firebase + GCP Cloud Run + GitHub
 ./agy-init \
   --project-name "Studio App" \
   --frontend react-vite-ts \
@@ -73,35 +79,35 @@ Or non-interactively with explicit flags:
 
 ---
 
-## What Remains After Initialization
+## What Gets Configured
 
-- **`AGENTS.md` & `.agents/stack-profile.md`**: A concise AI router (< 2 KB) plus your active stack's verification commands, domain evaluators, concurrency locks, and branch/ticket conventions.
-- **`.agents/skills/`**: Only the universal engineering skills (`engineering-philosophy`, `pr-quality-gate`, `parallel-pr-orchestrator`, `product-strategy-gate`) **plus** the skills for your selected modules.
-- **`.agents/hooks.json` + `.agents/hooks/pre_tool_guard.py`**: Deterministic Antigravity `PreToolUse` guards blocking committed `file:///` Markdown links, guarding live `.env` files, and requiring explicit confirmation for destructive git, PR merge, and production deploy commands.
-- **`.githooks/`**: Pre-configured `pre-commit`, `commit-msg`, and `pre-push` hooks (`core.hooksPath = .githooks`) enforcing branch safety, secret protection, Markdown hygiene, Conventional Commits / Jira key checks, and modular language linters.
-- **CI/CD, PR Templates & Cloud Scripts**: Dynamically generated `.github/workflows/ci.yml` + Dependabot **or** `bitbucket-pipelines.yml` + `.bitbucket/pull_request_template.md`, plus idempotent `scripts/provision.sh` and `scripts/deploy.sh` when Cloud Run is selected.
-- **Zero Template Bloat**: `modules/`, `core/`, `tests/`, `CONTRIBUTING_MODULES.md`, `scripts/agy_init.py`, and `agy-init` are removed automatically.
+- **AI Rules & PR Reviews:** A short `AGENTS.md` router, `.agents/stack-profile.md` with your test commands, shared engineering rules (**DRY**, **KISS**, **YAGNI**, **CAZZ**), multi-agent PR review gates, parallel worktree orchestration, and only the skills for your chosen stack.
+- **Safety Hooks:** Antigravity `PreToolUse` checks and Git hooks (`.githooks/`) that block secrets (`.env`), prevent broken local `file:///` links in Markdown, check commit formats, and gate merges or production deploys.
+- **CI/CD & PR Templates:** Ready-to-run `.github/workflows/ci.yml` + Dependabot or `bitbucket-pipelines.yml` + `.bitbucket/pull_request_template.md`.
+- **Cloud Scripts:** Idempotent `scripts/provision.sh` and `scripts/deploy.sh` with Secret Manager and Sandbox/Production parity when Cloud Run is selected.
+
+Once finished, `agy-init`, `core/`, `modules/`, and `tests/` are deleted automatically so zero template clutter remains.
 
 ---
 
-## Built-In Module Catalog (v1)
+## Available Modules
 
-| Category | Module ID | Description |
+| Category | Module ID | What It Covers |
 | :--- | :--- | :--- |
-| **Frontend** | `react-vite-ts` | React, Vite, TypeScript, `modern-web-guidance` a11y/mobile checks, Vitest |
-| **Backend** | `python-fastapi` | Python 3.12+, FastAPI, Pydantic v2, virtualenv guard, Ruff + mypy + pytest |
-| **Backend** | `node-express-ts` | Node.js, Express, TypeScript, Bearer/Cron auth middleware, Vitest |
-| **Data & BaaS** | `firebase` | Firebase Auth, named Firestore DB, `firestore.rules` baseline & emulator mutex |
-| **Cloud & Deployment** | `gcp-cloudrun` | Cloud Run `provision.sh` & `deploy.sh`, Secret Manager, Sandbox/Prod parity |
-| **Issue Tracker** | `github-issues` | GitHub Issues & Milestones (`gh`), skeptical deduplication, `Closes #<id>` |
-| **Issue Tracker** | `jira` | Atlassian Jira (`PROJ-<num>`), JQL deduplication, `commit-msg` ticket gate |
-| **Git Hosting & CI/CD** | `github` | GitHub Actions CI generator, PR template, Dependabot, `gh pr` stacked merges |
-| **Git Hosting & CI/CD** | `bitbucket` | Bitbucket Pipelines YAML generator, PR template, `bkt` / REST v2 stacked merges |
+| **Frontend** | `react-vite-ts` | React, Vite, TypeScript, accessibility/mobile checks, Vitest |
+| **Backend** | `python-fastapi` | Python 3.12+, FastAPI, Pydantic v2, virtualenv guard, Ruff, mypy, pytest |
+| **Backend** | `node-express-ts` | Node.js, Express, TypeScript, auth middleware, Vitest |
+| **Data & BaaS** | `firebase` | Firebase Auth, named Firestore DB, `firestore.rules` baseline, emulator rules |
+| **Cloud** | `gcp-cloudrun` | Cloud Run `provision.sh` & `deploy.sh`, Secret Manager, Sandbox/Prod parity |
+| **Issue Tracker** | `github-issues` | GitHub Issues & Milestones via `gh` CLI |
+| **Issue Tracker** | `jira` | Atlassian Jira (`PROJ-<num>`), JQL checks, commit key enforcement |
+| **Git Hosting** | `github` | GitHub Actions CI, PR template, Dependabot, `gh pr` workflow |
+| **Git Hosting** | `bitbucket` | Bitbucket Pipelines, PR template, `bkt` / REST API workflow |
 
 ---
 
-## Adding New Modules (Open/Closed Architecture)
+## Adding New Modules
 
-Want to add `java-spring`, `gitlab`, `linear`, or `aws-ecs`? Modules are auto-discovered from `modules/<category>/<module-id>/module.json`—**no edits to `scripts/agy_init.py` are required**.
+Want to contribute `java-spring`, `gitlab`, `linear`, or another tool? Each module lives in its own folder under `modules/<category>/<module-id>/` and is picked up automatically—no changes to `scripts/agy_init.py` needed.
 
-See [`CONTRIBUTING_MODULES.md`](CONTRIBUTING_MODULES.md) for the schema, `render.py` contract, and validation suite.
+See [`CONTRIBUTING_MODULES.md`](CONTRIBUTING_MODULES.md) for the folder layout, schema, and tests.

@@ -70,7 +70,7 @@ When orchestrating multiple tickets in parallel or stacked PR chains, follow [`.
 ## Step 6: Documentation & Skeptical Ticket Validation Gate
 
 When authoring repository docs or generating audit/refactoring backlog tickets:
-1. **Committed Markdown Hygiene:** Never write machine-local `file:///...` links in committed `.md` files (use portable relative links). Use valid Mermaid syntax (quote labels containing parentheses/brackets and use `<br/>` instead of `\n`). Reference symbol names instead of volatile line numbers, and keep one canonical section per topic (**DRY**).
+1. **Committed Markdown Hygiene:** Never write machine-local `file:///...` links in committed `.md` files (use portable relative links). In Mermaid diagrams, use short single-line quoted labels without HTML tags (`<br/>`) or `\n` so text is never clipped. Reference symbol names instead of volatile line numbers, and keep one canonical section per topic (**DRY**).
 2. **Deduplicate First:** Read full bodies and comments of open tickets and recent closed tickets in the active **Issue Tracker** before proposing new tickets.
 3. **Skeptical Ticket Validators (`research` subagents, `Model: 'inherit'`):** Verify every candidate finding against `git ls-files`, `git log`, actual compiler/test output, reachability guards, and **DRY**/**KISS**/**YAGNI**/**CAZZ**.
    - **Valid -> Small-PR Ticket:** File 1 focused ticket per cohesive concern with `file:line` evidence.
