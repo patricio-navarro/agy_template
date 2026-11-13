@@ -76,7 +76,7 @@ Or non-interactively with explicit flags:
 ## What Remains After Initialization
 
 - **`AGENTS.md` & `.agents/stack-profile.md`**: A concise AI router (< 2 KB) plus your active stack's verification commands, domain evaluators, concurrency locks, and branch/ticket conventions.
-- **`.agents/skills/`**: Only the universal engineering skills (`engineering-philosophy`, `pr-quality-gate`, `parallel-pr-orchestrator`, `product-strategy-gate`, `learn`) **plus** the skills for your selected modules.
+- **`.agents/skills/`**: Only the universal engineering skills (`engineering-philosophy`, `pr-quality-gate`, `parallel-pr-orchestrator`, `product-strategy-gate`) **plus** the skills for your selected modules.
 - **`.agents/hooks.json` + `.agents/hooks/pre_tool_guard.py`**: Deterministic Antigravity `PreToolUse` guards blocking committed `file:///` Markdown links, guarding live `.env` files, and requiring explicit confirmation for destructive git, PR merge, and production deploy commands.
 - **`.githooks/`**: Pre-configured `pre-commit`, `commit-msg`, and `pre-push` hooks (`core.hooksPath = .githooks`) enforcing branch safety, secret protection, Markdown hygiene, Conventional Commits / Jira key checks, and modular language linters.
 - **CI/CD, PR Templates & Cloud Scripts**: Dynamically generated `.github/workflows/ci.yml` + Dependabot **or** `bitbucket-pipelines.yml` + `.bitbucket/pull_request_template.md`, plus idempotent `scripts/provision.sh` and `scripts/deploy.sh` when Cloud Run is selected.

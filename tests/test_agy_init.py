@@ -155,7 +155,6 @@ class TestAgyTemplate(unittest.TestCase):
                     "pr-quality-gate",
                     "parallel-pr-orchestrator",
                     "product-strategy-gate",
-                    "learn",
                     "backend-python-fastapi",
                     "firebase-platform",
                     "firestore-security-auditor",
