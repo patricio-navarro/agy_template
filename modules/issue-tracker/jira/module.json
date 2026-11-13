@@ -1,0 +1,24 @@
+{
+  "id": "jira",
+  "category": "issue-tracker",
+  "name": "Atlassian Jira",
+  "description": "Tracks epics, stories, bugs, and sprints in Jira with branch/commit key enforcement.",
+  "parameters": [
+    {
+      "name": "JIRA_PROJECT_KEY",
+      "description": "Uppercase Jira project key (e.g., PROJ, ORD, CORE).",
+      "default": "PROJ",
+      "regex": "^[A-Z][A-Z0-9_]+$"
+    }
+  ],
+  "branch_convention": "feature/{{JIRA_PROJECT_KEY}}-<num>-<short-slug> or fix/{{JIRA_PROJECT_KEY}}-<num>-<short-slug>",
+  "pr_ticket_syntax": "{{JIRA_PROJECT_KEY}}-<num>",
+  "agents_md_rules": [
+    "**Issue Tracker (Jira — {{JIRA_PROJECT_KEY}}):** Follow [`.agents/skills/tracker-jira/SKILL.md`](.agents/skills/tracker-jira/SKILL.md). Reference `{{JIRA_PROJECT_KEY}}-<num>` in every feature/fix branch, commit, and Pull Request."
+  ],
+  "env_example": [
+    "# Jira Integration (local CLI / automation reference — never commit secrets)",
+    "JIRA_BASE_URL=\"https://your-domain.atlassian.net\"",
+    "JIRA_PROJECT_KEY=\"{{JIRA_PROJECT_KEY}}\""
+  ]
+}

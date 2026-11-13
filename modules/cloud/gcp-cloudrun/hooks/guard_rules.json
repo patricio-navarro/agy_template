@@ -1,0 +1,16 @@
+{
+  "command_rules": [
+    {
+      "id": "confirm-production-deploy",
+      "pattern": "(?:^|[;&|]\\s*)(?:bash\\s+)?(?:\\./)?(?:scripts/)?deploy\\.sh\\s+production\\b",
+      "decision": "force_ask",
+      "reason": "Production deployment detected. Explicit human confirmation is required before deploying to production."
+    },
+    {
+      "id": "confirm-gcloud-destructive-delete",
+      "pattern": "(?:^|[;&|]\\s*)gcloud\\s+(?:projects\\s+delete|run\\s+services\\s+delete|secrets\\s+delete)\\b",
+      "decision": "force_ask",
+      "reason": "Destructive gcloud resource deletion detected. Explicit human confirmation is required."
+    }
+  ]
+}

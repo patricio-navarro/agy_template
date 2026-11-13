@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -d "${HOOK_DIR}/pre-push.d" ]]; then
+  for script in "${HOOK_DIR}/pre-push.d/"*.sh; do
+    [[ -e "$script" ]] || continue
+    bash "$script" "$@"
+  done
+fi

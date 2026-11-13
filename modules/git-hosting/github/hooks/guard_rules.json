@@ -1,0 +1,10 @@
+{
+  "command_rules": [
+    {
+      "id": "confirm-gh-pr-merge-or-repo-delete",
+      "pattern": "(?:^|[;&|]\\s*)gh\\s+(?:pr\\s+merge|repo\\s+delete)\\b",
+      "decision": "force_ask",
+      "reason": "Merging a Pull Request or deleting a GitHub repository requires explicit human confirmation."
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "command_rules": [
+    {
+      "id": "confirm-bitbucket-pr-merge",
+      "pattern": "(?:^|[;&|]\\s*)(?:bkt\\s+pr\\s+merge\\b|curl\\b.*\\/pullrequests\\/[0-9]+\\/merge\\b)",
+      "decision": "force_ask",
+      "reason": "Merging a Bitbucket Pull Request requires explicit human confirmation."
+    }
+  ]
+}

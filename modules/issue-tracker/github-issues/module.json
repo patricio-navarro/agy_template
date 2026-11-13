@@ -1,0 +1,11 @@
+{
+  "id": "github-issues",
+  "category": "issue-tracker",
+  "name": "GitHub Issues & Milestones",
+  "description": "Tracks epics, features, bugs, and milestones in GitHub Issues via gh CLI.",
+  "branch_convention": "feature/issue-<id>-<short-slug> or fix/issue-<id>-<short-slug>",
+  "pr_ticket_syntax": "Closes #<id>",
+  "agents_md_rules": [
+    "**Issue Tracker (GitHub Issues):** Follow [`.agents/skills/tracker-github-issues/SKILL.md`](.agents/skills/tracker-github-issues/SKILL.md). Track all work in GitHub Issues & Milestones via `gh` (never local `tickets/` files)."
+  ]
+}

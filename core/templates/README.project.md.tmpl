@@ -1,0 +1,46 @@
+# {{PROJECT_NAME}}
+
+This project was initialized from [`agy_template`](https://github.com/patricio-navarro/agy_template) with a tailored Antigravity governance harness, modular skills, deterministic lifecycle/git hooks, and CI/CD configuration.
+
+---
+
+## Active Stack
+
+{{SELECTED_MODULES_TABLE}}
+
+---
+
+## Quick Start
+
+1. **Configure local environment variables:**
+   ```sh
+   cp .env.example .env
+   ```
+   Fill in the project-specific values in `.env`.
+2. **Verify Git hooks are active:**
+   ```sh
+   git config --get core.hooksPath
+   ```
+   Expected output: `.githooks` (run `git config core.hooksPath .githooks` on fresh clones).
+3. **Run project verification commands:**
+{{VERIFICATION_COMMANDS_LIST}}
+
+---
+
+## AI Workflow Shortcuts in Antigravity
+
+- **Plan complex features:** `/plan` before editing across multiple domains.
+- **Execute multi-ticket backlogs autonomously:**
+  `/goal Execute the open tickets in "<Milestone/Sprint>" using the parallel-pr-orchestrator and pr-quality-gate skills.`
+- **Codify corrections permanently:** `/learn` after correcting an agent mistake.
+- **Keep context sharp after merging PRs:** `/compact`.
+
+---
+
+## Documentation
+
+- [`AGENTS.md`](AGENTS.md) — Concise AI governance router.
+- [`.agents/stack-profile.md`](.agents/stack-profile.md) — Active stack verification commands, evaluators, and conventions.
+- [`docs/README.md`](docs/README.md) — Technical documentation hub.
+- [`docs/product_strategy.md`](docs/product_strategy.md) — Product positioning, unit economics, and phase gates.
+- [`docs/architecture_decisions.md`](docs/architecture_decisions.md) — Architectural Decision Records (ADRs).

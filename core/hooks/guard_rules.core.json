@@ -1,0 +1,24 @@
+{
+  "command_rules": [
+    {
+      "id": "block-stage-dotenv",
+      "pattern": "(?:^|[;&|]\\s*)git\\s+add\\b.*(?:^|\\s)(\\S*/)?\\.env(\\.(?!example\\b|sample\\b|template\\b)[A-Za-z0-9_.-]+)?(\\s|$)",
+      "decision": "deny",
+      "reason": "Refusing to stage a live .env secret file. Only .env.example / .env.sample / .env.template may be committed."
+    },
+    {
+      "id": "confirm-push-main",
+      "pattern": "(?:^|[;&|]\\s*)git\\s+push\\b.*\\b(main|master)\\b",
+      "exclude_pattern": "--dry-run",
+      "decision": "ask",
+      "only_when_initialized": true,
+      "reason": "Pushing directly to main/master requires explicit confirmation. Prefer feature branches and Pull Requests."
+    },
+    {
+      "id": "confirm-destructive-git",
+      "pattern": "(?:^|[;&|]\\s*)git\\s+(?:reset\\s+--hard|push\\b.*--force(?!-with-lease)|clean\\s+-[A-Za-z]*f)",
+      "decision": "force_ask",
+      "reason": "Destructive git operation detected (reset --hard / non-lease force push / clean -f). Explicit approval required."
+    }
+  ]
+}

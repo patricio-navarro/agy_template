@@ -1,0 +1,11 @@
+{
+  "command_rules": [
+    {
+      "id": "warn-global-pip-install",
+      "pattern": "(?:^|[;&|]\\s*)(?:sudo\\s+)?pip3?\\s+install\\b",
+      "exclude_pattern": "(?:-m\\s+venv|\\.venv/|venv/|uv\\s+pip\\b|--dry-run)",
+      "decision": "ask",
+      "reason": "Avoid global pip install. Confirm only if intentionally installing into an already-activated virtualenv; prefer uv or .venv/bin/pip."
+    }
+  ]
+}

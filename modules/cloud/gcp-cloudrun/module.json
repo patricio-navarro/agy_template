@@ -1,0 +1,37 @@
+{
+  "id": "gcp-cloudrun",
+  "category": "cloud",
+  "name": "Google Cloud Run",
+  "description": "Google Cloud Run provisioning, Secret Manager, Artifact Registry retention, and Sandbox/Production parity scripts.",
+  "evaluators": [
+    {
+      "name": "Cloud Run Infrastructure, Secret Manager & Sandbox/Prod Parity Evaluator",
+      "scope": "Idempotent provision.sh/deploy.sh automation, Secret Manager least-privilege IAM, API fast-path checks, and Sandbox/Production parity."
+    }
+  ],
+  "pr_checklist": [
+    "No unautomated manual Cloud Console setup steps remain; any required GCP settings are automated in `scripts/provision.sh` / `scripts/deploy.sh`",
+    "Verified in **Sandbox** (`./scripts/deploy.sh sandbox`) before merging to `main` (skip for pure docs/skill PRs)"
+  ],
+  "agents_md_rules": [
+    "**Cloud Run & Sandbox Parity:** Follow [`.agents/skills/cloud-gcp-cloudrun/SKILL.md`](.agents/skills/cloud-gcp-cloudrun/SKILL.md). Automate all cloud settings in `scripts/provision.sh` and `scripts/deploy.sh`; never merge to `main` while manual console setup is pending."
+  ],
+  "gitignore": [
+    ".env.sandbox",
+    ".env.production"
+  ],
+  "env_example": [
+    "# Google Cloud Run",
+    "PROJECT_ID=\"\"",
+    "DEPLOY_REGION=\"us-central1\"",
+    "SERVICE_NAME=\"{{PROJECT_SLUG}}\"",
+    "APP_URL=\"https://{{PROJECT_SLUG}}.example.com\"",
+    "USE_SECRET_MANAGER=\"true\"",
+    "CRON_SECRET=\"replace-with-32-byte-hex-secret\"",
+    "MIN_INSTANCES=\"0\"",
+    "MAX_INSTANCES=\"2\"",
+    "CONCURRENCY=\"80\"",
+    "MEMORY=\"512Mi\"",
+    "CPU=\"1\""
+  ]
+}

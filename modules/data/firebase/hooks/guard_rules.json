@@ -1,0 +1,10 @@
+{
+  "command_rules": [
+    {
+      "id": "confirm-firebase-destructive-delete",
+      "pattern": "(?:^|[;&|]\\s*)(?:npx\\s+(?:-y\\s+)?)?firebase(?:-tools)?\\s+(?:projects:delete|firestore:delete\\b.*--all-collections)",
+      "decision": "force_ask",
+      "reason": "Destructive Firebase project or full-collection deletion detected. Explicit approval required."
+    }
+  ]
+}

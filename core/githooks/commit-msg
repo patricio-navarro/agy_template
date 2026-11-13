@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MSG_FILE="${1:-}"
+if [[ -z "$MSG_FILE" || ! -f "$MSG_FILE" ]]; then
+  exit 0
+fi
+
+python3 - "$MSG_FILE" "${HOOK_DIR}/commit-msg.json" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+msg_path = Path(sys.argv[1])
+cfg_path = Path(sys.argv[2])
+
+raw_lines = [
+    line for line in msg_path.read_text(encoding="utf-8").splitlines()
+    if not line.lstrip().startswith("#")
+]
+full_msg = "\n".join(raw_lines).strip()
+if not full_msg:
+    sys.stderr.write("Error: Commit message is empty.\n")
+    sys.exit(1)
+
+header = raw_lines[0].strip()
+if header.startswith(("Merge ", "Revert ", "fixup!", "squash!")):
+    sys.exit(0)
+
+config = {}
+if cfg_path.is_file():
+    config = json.loads(cfg_path.read_text(encoding="utf-8"))
+
+header_regex = config.get(
+    "header_regex",
+    r"^(feat|fix|refactor|docs|test|chore|ci|perf|build|revert)(\([A-Za-z0-9_#/.-]+\))?!?: .+",
+)
+if not re.match(header_regex, header):
+    sys.stderr.write(
+        "Error: Commit header must follow Conventional Commits.\n"
+        f"Got: {header}\n"
+        f"Expected: {config.get('example', 'feat(#12): concise summary')}\n"
+    )
+    sys.exit(1)
+
+required_types = set(config.get("ticket_required_types") or [])
+ticket_regex = config.get("ticket_regex")
+if ticket_regex and required_types:
+    commit_type = header.split(":", 1)[0].split("(", 1)[0].rstrip("!")
+    if commit_type in required_types and not re.search(ticket_regex, full_msg):
+        sys.stderr.write(
+            f"Error: Commit type '{commit_type}' requires a tracked ticket reference matching {ticket_regex}.\n"
+            f"Example: {config.get('example', '')}\n"
+        )
+        sys.exit(1)
+PY

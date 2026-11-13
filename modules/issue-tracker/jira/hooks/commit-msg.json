@@ -1,0 +1,6 @@
+{
+  "header_regex": "^(feat|fix|refactor|docs|test|chore|ci|perf|build|revert)(\\([A-Za-z0-9_#/.-]+\\))?!?: .+",
+  "ticket_required_types": ["feat", "fix", "refactor"],
+  "ticket_regex": "\\b{{JIRA_PROJECT_KEY}}-[0-9]+\\b",
+  "example": "feat({{JIRA_PROJECT_KEY}}-101): implement health check endpoint"
+}

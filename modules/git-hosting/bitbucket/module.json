@@ -1,0 +1,9 @@
+{
+  "id": "bitbucket",
+  "category": "git-hosting",
+  "name": "Bitbucket (Pipelines + PRs)",
+  "description": "Pull Request workflow via bkt CLI / REST API v2.0, Bitbucket Pipelines YAML generator, and Bitbucket PR template.",
+  "agents_md_rules": [
+    "**Git Hosting (Bitbucket PRs & Pipelines):** Follow [`.agents/skills/git-bitbucket-pr/SKILL.md`](.agents/skills/git-bitbucket-pr/SKILL.md). Follow `.bitbucket/pull_request_template.md`, keep `bitbucket-pipelines.yml` green, and never merge to `main` without explicit user approval."
+  ]
+}

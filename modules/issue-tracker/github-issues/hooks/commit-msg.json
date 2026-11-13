@@ -1,0 +1,5 @@
+{
+  "header_regex": "^(feat|fix|refactor|docs|test|chore|ci|perf|build|revert)(\\([A-Za-z0-9_#/.-]+\\))?!?: .+",
+  "ticket_required_types": [],
+  "example": "feat(#12): add rate limiter to webhook endpoint"
+}

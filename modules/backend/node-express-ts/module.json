@@ -1,0 +1,72 @@
+{
+  "id": "node-express-ts",
+  "category": "backend",
+  "name": "Node.js + Express + TypeScript",
+  "description": "Backend governance for Node.js, Express API gateways, auth/cron middleware, rate limiting, and TypeScript builds.",
+  "verification_commands": [
+    "npm run lint",
+    "npx vitest run --reporter=dot",
+    "npm run build"
+  ],
+  "evaluators": [
+    {
+      "name": "Node/Express API, Auth Middleware & Resilience Evaluator",
+      "scope": "Route decomposition, Bearer/Cron auth middleware, input validation, rate limiting, Promise.allSettled cleanup, and graceful shutdown."
+    }
+  ],
+  "pr_checklist": [
+    "New endpoints enforce auth/tenant middleware, input validation, and error resilience",
+    "Type check (`npm run lint`), tests (`npx vitest run --reporter=dot`), and build (`npm run build`) pass"
+  ],
+  "agents_md_rules": [
+    "**Node/Express API Standards:** Follow [`.agents/skills/backend-node-express/SKILL.md`](.agents/skills/backend-node-express/SKILL.md) for route decomposition, auth/cron middleware, and error resilience."
+  ],
+  "gitignore": [
+    "node_modules/",
+    "dist/",
+    "coverage/"
+  ],
+  "env_example": [
+    "# Backend (Node.js / Express)",
+    "NODE_ENV=development",
+    "PORT=3000"
+  ],
+  "dependabot_ecosystems": [
+    "npm"
+  ],
+  "ci_jobs": [
+    {
+      "id": "node-workspace",
+      "dedupe_key": "node-workspace",
+      "name": "Node.js Lint, Test & Build",
+      "runtimes": {
+        "node": "22"
+      },
+      "docker_image": "node:22-slim",
+      "caches": [
+        "npm"
+      ],
+      "guard_files": [
+        "package.json"
+      ],
+      "steps": [
+        {
+          "name": "Install dependencies",
+          "run": "if [ -f package-lock.json ]; then npm ci; else npm install; fi"
+        },
+        {
+          "name": "Type check / Lint",
+          "run": "npm run lint --if-present"
+        },
+        {
+          "name": "Run unit tests",
+          "run": "npm test --if-present"
+        },
+        {
+          "name": "Verify production build",
+          "run": "npm run build --if-present"
+        }
+      ]
+    }
+  ]
+}

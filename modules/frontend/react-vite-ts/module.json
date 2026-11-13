@@ -1,0 +1,76 @@
+{
+  "id": "react-vite-ts",
+  "category": "frontend",
+  "name": "React + Vite + TypeScript",
+  "description": "Frontend governance for React, Vite, TypeScript, Tailwind CSS, and modern-web-guidance accessibility/mobile checks.",
+  "verification_commands": [
+    "npm run lint",
+    "npx vitest run --reporter=dot",
+    "npm run build"
+  ],
+  "evaluators": [
+    {
+      "name": "Frontend State, Hooks & Client Services Evaluator",
+      "scope": "Client state synchronization, hooks, promise deduplication, account-switch cleanup, and memory leaks."
+    },
+    {
+      "name": "UI, Accessibility (modern-web-guidance) & Mobile Viewport Evaluator",
+      "scope": "Component DRYness, i18n parity, ARIA semantics, :focus-visible, mobile 320px-375px truncation, and background fetch priority."
+    }
+  ],
+  "pr_checklist": [
+    "Audited UI/client changes with `modern-web-guidance` (ARIA, `:focus-visible`, `type=\"button\"`, mobile text truncation)",
+    "Type check (`npm run lint`), unit tests (`npx vitest run --reporter=dot`), and build (`npm run build`) pass"
+  ],
+  "agents_md_rules": [
+    "**Frontend & Modern Web Guidance:** Whenever modifying HTML, CSS/Tailwind, React components, or client APIs, follow [`.agents/skills/frontend-react-vite/SKILL.md`](.agents/skills/frontend-react-vite/SKILL.md) and run `modern-web-guidance` checks."
+  ],
+  "gitignore": [
+    "node_modules/",
+    "dist/",
+    "coverage/",
+    "*.local"
+  ],
+  "env_example": [
+    "# Frontend (Vite)",
+    "VITE_APP_NAME=\"{{PROJECT_NAME}}\""
+  ],
+  "dependabot_ecosystems": [
+    "npm"
+  ],
+  "ci_jobs": [
+    {
+      "id": "node-workspace",
+      "dedupe_key": "node-workspace",
+      "name": "Node.js Lint, Test & Build",
+      "runtimes": {
+        "node": "22"
+      },
+      "docker_image": "node:22-slim",
+      "caches": [
+        "npm"
+      ],
+      "guard_files": [
+        "package.json"
+      ],
+      "steps": [
+        {
+          "name": "Install dependencies",
+          "run": "if [ -f package-lock.json ]; then npm ci; else npm install; fi"
+        },
+        {
+          "name": "Type check / Lint",
+          "run": "npm run lint --if-present"
+        },
+        {
+          "name": "Run unit tests",
+          "run": "npm test --if-present"
+        },
+        {
+          "name": "Verify production build",
+          "run": "npm run build --if-present"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 1. Prevent accidental direct commits on main/master unless explicitly overridden
+CURRENT_BRANCH="$(git symbolic-ref --quiet --short HEAD || true)"
+if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]] && [[ "${ALLOW_MAIN_COMMIT:-0}" != "1" ]]; then
+  echo "Error: Direct commits to '$CURRENT_BRANCH' are blocked by .githooks/pre-commit." >&2
+  echo "Create a feature/fix branch first, or pass ALLOW_MAIN_COMMIT=1 for intentional bootstrap commits." >&2
+  exit 1
+fi
+
+STAGED_FILES="$(git diff --cached --name-only --diff-filter=ACM || true)"
+if [[ -z "$STAGED_FILES" ]]; then
+  exit 0
+fi
+
+# 2. Block live .env files and private keys from being staged
+while IFS= read -r file; do
+  [[ -z "$file" ]] && continue
+  base="$(basename "$file")"
+  if [[ "$base" == ".env" ]] || [[ "$base" =~ ^\.env\.(.+)$ && ! "$base" =~ ^\.env\.(example|sample|template)$ ]]; then
+    echo "Error: Refusing to commit live secret file '$file'." >&2
+    exit 1
+  fi
+  if [[ -f "$file" ]] && grep -qE "BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY" "$file" 2>/dev/null; then
+    echo "Error: Private key material detected in staged file '$file'." >&2
+    exit 1
+  fi
+  # 3. Block machine-local file:/// links inside committed markdown files
+  if [[ "$file" == *.md && -f "$file" ]] && grep -qE '\]\(file:///' "$file" 2>/dev/null; then
+    echo "Error: Machine-local 'file:///' link detected in '$file'. Use portable relative links instead." >&2
+    exit 1
+  fi
+done <<< "$STAGED_FILES"
+
+# 4. Run modular stack drop-ins in lexical order
+if [[ -d "${HOOK_DIR}/pre-commit.d" ]]; then
+  for script in "${HOOK_DIR}/pre-commit.d/"*.sh; do
+    [[ -e "$script" ]] || continue
+    bash "$script"
+  done
+fi

@@ -1,0 +1,60 @@
+{
+  "id": "firebase",
+  "category": "data",
+  "name": "Firebase (Auth + Cloud Firestore)",
+  "description": "Firebase Authentication, Cloud Firestore named database conventions, declarative firestore.rules baseline, and emulator security rules testing.",
+  "verification_commands": [
+    "npm run test:rules  # required when firestore.rules or security rules tests change (or npx -y firebase-tools@latest emulators:exec ...)"
+  ],
+  "evaluators": [
+    {
+      "name": "Firebase Auth & Firestore Security Rules Evaluator",
+      "scope": "Tenant isolation, RBAC create/update invariants, hasOnly field allowlists, quota math, named database ID consistency, and bounded queries."
+    }
+  ],
+  "single_concurrency_locks": [
+    "Firebase Firestore Emulator: Only 1 subagent at a time may run `npm run test:rules` or `firebase emulators:exec` to prevent local port collisions."
+  ],
+  "pr_checklist": [
+    "Any `firestore.rules` modifications were delegated to `firestore-rules-author`, audited with `firestore-security-auditor`, and verified in the Firestore Emulator"
+  ],
+  "agents_md_rules": [
+    "**Firebase & Firestore Rules:** Follow [`.agents/skills/firebase-platform/SKILL.md`](.agents/skills/firebase-platform/SKILL.md) and [`.agents/skills/firestore-security-auditor/SKILL.md`](.agents/skills/firestore-security-auditor/SKILL.md). Always delegate `firestore.rules` authoring to the `firestore-rules-author` subagent."
+  ],
+  "gitignore": [
+    ".firebase/",
+    "firebase-debug.log*",
+    "firestore-debug.log*",
+    "ui-debug.log*"
+  ],
+  "env_example": [
+    "# Firebase",
+    "FIREBASE_PROJECT_ID=\"\"",
+    "FIREBASE_DATABASE_ID=\"{{PROJECT_SLUG}}-db\""
+  ],
+  "ci_jobs": [
+    {
+      "id": "firebase-rules",
+      "dedupe_key": "firebase-rules",
+      "name": "Firestore Security Rules Tests",
+      "runtimes": {
+        "node": "22",
+        "java": "21"
+      },
+      "docker_image": "eclipse-temurin:21-jdk",
+      "caches": [
+        "npm"
+      ],
+      "guard_files": [
+        "firestore.rules",
+        "package.json"
+      ],
+      "steps": [
+        {
+          "name": "Run Firestore security rules suite if configured",
+          "run": "if [ -f package.json ] && grep -q '\"test:rules\"' package.json; then if [ -f package-lock.json ]; then npm ci; else npm install; fi && npm run test:rules; else echo 'No package.json test:rules script configured yet; skipping emulator rules suite'; fi"
+        }
+      ]
+    }
+  ]
+}

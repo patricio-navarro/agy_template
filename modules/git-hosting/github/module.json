@@ -1,0 +1,12 @@
+{
+  "id": "github",
+  "category": "git-hosting",
+  "name": "GitHub (Actions + PRs + Dependabot)",
+  "description": "Pull Request workflow via gh CLI, dynamic GitHub Actions CI workflow, PR template, and Dependabot config.",
+  "dependabot_ecosystems": [
+    "github-actions"
+  ],
+  "agents_md_rules": [
+    "**Git Hosting (GitHub PRs & Actions):** Follow [`.agents/skills/git-github-pr/SKILL.md`](.agents/skills/git-github-pr/SKILL.md). Follow `.github/pull_request_template.md` via `gh pr create` and never merge to `main` without explicit user approval."
+  ]
+}

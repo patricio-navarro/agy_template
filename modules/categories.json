@@ -1,0 +1,46 @@
+{
+  "categories": [
+    {
+      "id": "frontend",
+      "label": "Frontend",
+      "description": "Client web or mobile UI framework and quality checks.",
+      "selection": "single_optional",
+      "default": "none"
+    },
+    {
+      "id": "backend",
+      "label": "Backend",
+      "description": "Server API runtime, contract validation, and backend evaluators.",
+      "selection": "single_optional",
+      "default": "none"
+    },
+    {
+      "id": "data",
+      "label": "Data & BaaS",
+      "description": "Databases, auth, and security rule suites (multi-select allowed).",
+      "selection": "multi_optional",
+      "default": []
+    },
+    {
+      "id": "cloud",
+      "label": "Cloud & Deployment",
+      "description": "Cloud provisioning, deployment automation, and environment parity.",
+      "selection": "single_optional",
+      "default": "none"
+    },
+    {
+      "id": "issue-tracker",
+      "label": "Issue Tracker",
+      "description": "Single source of truth for epics, tickets, and commit linkage.",
+      "selection": "single_required",
+      "default": "github-issues"
+    },
+    {
+      "id": "git-hosting",
+      "label": "Git Hosting & CI/CD",
+      "description": "Pull Request automation, templates, and CI/CD pipeline generation.",
+      "selection": "single_required",
+      "default": "github"
+    }
+  ]
+}
