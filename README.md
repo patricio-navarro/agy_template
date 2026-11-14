@@ -1,8 +1,8 @@
 # `agy_template`
 
-A modular starter template for building software with **Google Antigravity**.
+> A modular starter template for building software with **Google Antigravity**—without carrying rules for tools you don't use.
 
-AI coding assistants slow down and make mistakes when a repository is filled with rules and skills for tools you do not use. `agy_template` fixes that: you pick your tech stack once, and a small setup script deletes every unused skill, hook, script, and pipeline—leaving a clean workspace tailored to your project.
+AI coding assistants slow down and make mistakes when a repository is stuffed with instructions for the wrong stack. `agy_template` flips that around: pick your tools once, and a zero-dependency Python 3 script deletes every unused skill, hook, script, and pipeline—leaving a lean workspace tailored to your project.
 
 ---
 
@@ -32,8 +32,8 @@ flowchart TD
 
 ## Quick Start
 
-1. Click **Use this template** (or fork) on GitHub and clone your new repository.
-2. Choose your stack using either **Antigravity** or the **CLI**:
+1. Click **Use this template** on GitHub and clone your new repository.
+2. Pick your stack with **Antigravity** or from your terminal:
 
 ### Option A — Ask Antigravity
 
@@ -41,31 +41,19 @@ Open the cloned folder in Antigravity and tell it what you are building:
 
 > *"Set up this repo for a Python FastAPI, Firebase, Google Cloud, Jira (key ORD), and Bitbucket project named Order API, and remove everything else."*
 
-Antigravity reads the available modules and runs `./agy-init` for you.
+Antigravity reads the module catalog and runs `./agy-init` for you.
 
 ### Option B — Run `./agy-init`
 
-Run the interactive wizard:
+Launch the interactive wizard:
+
 ```sh
 ./agy-init
 ```
 
-Or pass your stack as flags:
+Want to see what will be created and removed before touching disk? Add `--dry-run`. You can also list options with `./agy-init --list-modules`, or pass flags directly:
 
 ```sh
-# Python FastAPI + Firebase + GCP Cloud Run + Jira + Bitbucket
-./agy-init \
-  --project-name "Order API" \
-  --frontend none \
-  --backend python-fastapi \
-  --data firebase \
-  --cloud gcp-cloudrun \
-  --issue-tracker jira \
-  --jira-key ORD \
-  --git-hosting bitbucket \
-  --yes
-
-# React/Vite + Node/Express + Firebase + GCP Cloud Run + GitHub
 ./agy-init \
   --project-name "Studio App" \
   --frontend react-vite-ts \
@@ -77,24 +65,44 @@ Or pass your stack as flags:
   --yes
 ```
 
+<details>
+<summary>Another example: Python FastAPI + Firebase + Cloud Run + Jira + Bitbucket</summary>
+
+```sh
+./agy-init \
+  --project-name "Order API" \
+  --frontend none \
+  --backend python-fastapi \
+  --data firebase \
+  --cloud gcp-cloudrun \
+  --issue-tracker jira \
+  --jira-key ORD \
+  --git-hosting bitbucket \
+  --yes
+```
+
+</details>
+
 ---
 
-## What Gets Configured
+## What You End Up With
 
-- **AI Rules & PR Reviews:** A short `AGENTS.md` router, `.agents/stack-profile.md` with your test commands, shared engineering rules (**DRY**, **KISS**, **YAGNI**, **CAZZ**), multi-agent PR review gates, parallel worktree orchestration, and only the skills for your chosen stack.
-- **Safety Hooks:** Antigravity `PreToolUse` checks and Git hooks (`.githooks/`) that block secrets (`.env`), prevent broken local `file:///` links in Markdown, check commit formats, and gate merges or production deploys.
-- **CI/CD & PR Templates:** Ready-to-run `.github/workflows/ci.yml` + Dependabot or `bitbucket-pipelines.yml` + `.bitbucket/pull_request_template.md`.
+- **Focused AI Rules:** A short `AGENTS.md` router, `.agents/stack-profile.md` with your test commands, shared engineering principles (**DRY**, **KISS**, **YAGNI**, **CAZZ**), multi-agent PR review gates, parallel worktree orchestration, and only the skills your stack needs.
+- **Safety Hooks:** Antigravity `PreToolUse` checks and Git hooks (`.githooks/`) that block committed `.env` secrets, catch broken `file:///` links in Markdown, validate commit formats, and gate merges or production deploys.
+- **CI/CD & PR Templates:** Ready-to-run `.github/workflows/ci.yml` + Dependabot, or `bitbucket-pipelines.yml` + `.bitbucket/pull_request_template.md`.
 - **Cloud Scripts:** Idempotent `scripts/provision.sh` and `scripts/deploy.sh` with Secret Manager and Sandbox/Production parity when Cloud Run is selected.
 
-Once finished, `agy-init`, `core/`, `modules/`, and `tests/` are deleted automatically so zero template clutter remains.
+Once initialization finishes, `agy-init`, `core/`, `modules/`, and `tests/` remove themselves automatically—no leftover template scaffolding.
 
 ---
 
 ## Available Modules
 
+Mix and match across categories, or pass `none` for anything you don't need:
+
 | Category | Module ID | What It Covers |
 | :--- | :--- | :--- |
-| **Frontend** | `react-vite-ts` | React, Vite, TypeScript, accessibility/mobile checks, Vitest |
+| **Frontend** | `react-vite-ts` | React, Vite, TypeScript, accessibility & mobile checks, Vitest |
 | **Backend** | `python-fastapi` | Python 3.12+, FastAPI, Pydantic v2, virtualenv guard, Ruff, mypy, pytest |
 | **Backend** | `node-express-ts` | Node.js, Express, TypeScript, auth middleware, Vitest |
 | **Data & BaaS** | `firebase` | Firebase Auth, named Firestore DB, `firestore.rules` baseline, emulator rules |
@@ -106,8 +114,8 @@ Once finished, `agy-init`, `core/`, `modules/`, and `tests/` are deleted automat
 
 ---
 
-## Adding New Modules
+## Adding Your Own Modules
 
-Want to contribute `java-spring`, `gitlab`, `linear`, or another tool? Each module lives in its own folder under `modules/<category>/<module-id>/` and is picked up automatically—no changes to `scripts/agy_init.py` needed.
+Want to add `java-spring`, `gitlab`, `linear`, or another tool? Drop a folder under `modules/<category>/<module-id>/` and it is discovered automatically—no edits to `scripts/agy_init.py` required.
 
-See [`CONTRIBUTING_MODULES.md`](CONTRIBUTING_MODULES.md) for the folder layout, schema, and tests.
+See [`CONTRIBUTING_MODULES.md`](CONTRIBUTING_MODULES.md) for the folder layout, schema, and tests. Licensed under the [MIT License](LICENSE).
