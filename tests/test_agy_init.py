@@ -14,6 +14,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AGY_INIT = REPO_ROOT / "agy-init"
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+import agy_init  # noqa: E402
 
 
 def _copy_template_repo(dst: Path) -> Path:
@@ -450,6 +452,46 @@ class TestAgyTemplate(unittest.TestCase):
                 check=True,
             )
             self.assertEqual(json.loads(post.stdout), {})
+
+    def test_single_pass_placeholder_substitution(self) -> None:
+        result = agy_init.substitute_placeholders(
+            "{{A}} {{UNKNOWN}}",
+            {"A": "{{B}}", "B": "boom"},
+        )
+        self.assertEqual(result, "{{B}} {{UNKNOWN}}")
+
+    def test_resolve_safe_subpath_blocks_traversal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            safe = agy_init.resolve_safe_subpath(root, ".github/workflows/ci.yml")
+            self.assertEqual(safe, root.resolve() / ".github" / "workflows" / "ci.yml")
+            with self.assertRaises(agy_init.InitError):
+                agy_init.resolve_safe_subpath(root, "../escape.txt")
+            with self.assertRaises(agy_init.InitError):
+                agy_init.resolve_safe_subpath(root, "/etc/passwd")
+
+    def test_out_of_bounds_interactive_token_raises(self) -> None:
+        catalog = agy_init.load_catalog()
+        cat_mods = catalog.modules["backend"]
+        ordered_mods = list(cat_mods.values())
+        with self.assertRaises(agy_init.InitError):
+            agy_init._resolve_choice_token("99", "backend", ordered_mods, cat_mods)
+
+    def test_cli_errors_exit_cleanly_without_traceback(self) -> None:
+        for cli_args in (
+            ["--param", "BROKEN"],
+            ["--backend", "unknown-stack", "--yes"],
+        ):
+            proc = subprocess.run(
+                [str(AGY_INIT), *cli_args],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("Error:", proc.stderr)
+            self.assertNotIn("Traceback", proc.stderr)
 
 
 if __name__ == "__main__":
