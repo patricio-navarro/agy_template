@@ -11,16 +11,16 @@ AI coding assistants slow down and make mistakes when a repository is filled wit
 ```mermaid
 flowchart TD
     subgraph Source["agy_template"]
-        Core["core - Shared Best Practices"]
-        Catalog["modules - Tech Stack Options"]
+        Core["Core Rules"]
+        Catalog["Tech Stack"]
     end
 
-    Init["agy-init - Pick Your Stack"]
+    Init["./agy-init"]
 
     subgraph Project["Your Clean Repository"]
-        Skills["AGENTS.md and Matching Skills"]
-        Hooks["Git and AI Safety Hooks"]
-        Pipelines["CI Pipeline and Cloud Scripts"]
+        Skills["AGENTS.md"]
+        Hooks["Safety Hooks"]
+        Pipelines["CI & Cloud"]
     end
 
     Core --> Init
