@@ -56,6 +56,8 @@ FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 FRONTMATTER_KEY_RE = re.compile(r"^([A-Za-z0-9_-]+):\s*(.*)$")
 SKILL_NAME_RE = re.compile(r"^[a-z0-9-]+$")
 PLACEHOLDER_RE = re.compile(r"\{\{([A-Z0-9_]+)\}\}")
+ENV_KEY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=")
+MERGED_BROWNFIELD_FILES = frozenset({".gitignore", ".env.example"})
 
 PRUNE_ALWAYS_PATHS = (
     ".github",
@@ -543,7 +545,49 @@ def _resolve_choice_token(
     raise InitError(f"Invalid selection '{token}' for category '{cat_id}'.")
 
 
-def _prompt_category_selection(cat: CategorySpec, mod_map: Mapping[str, ModuleSpec]) -> list[str]:
+def _default_ids_for_category(cat: CategorySpec, valid_mods: Mapping[str, ModuleSpec] | None = None) -> list[str]:
+    if isinstance(cat.default, tuple):
+        ids = [str(x) for x in cat.default if x and str(x) != "none"]
+    elif cat.default and cat.default != "none":
+        ids = [str(cat.default)]
+    else:
+        ids = []
+    return [mod_id for mod_id in ids if mod_id in valid_mods] if valid_mods is not None else ids
+
+
+def _parse_module_selection_map(raw_map: Mapping[str, Any] | None) -> dict[str, list[str]]:
+    selections: dict[str, list[str]] = {}
+    for cat_id, val in (raw_map or {}).items():
+        if isinstance(val, list):
+            selections[cat_id] = [str(v) for v in val if v and str(v) != "none"]
+        elif val and str(val) != "none":
+            selections[cat_id] = [str(val)]
+        else:
+            selections[cat_id] = []
+    return selections
+
+
+def _load_existing_manifest(target_dir: Path | None) -> dict[str, Any]:
+    """Load .agy-manifest.json from target_dir if present."""
+    if target_dir is None:
+        return {}
+    manifest_path = target_dir / ".agy-manifest.json"
+    if not manifest_path.is_file():
+        return {}
+    try:
+        data = load_json(manifest_path)
+    except Exception as exc:
+        raise InitError(f"Invalid existing manifest {manifest_path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise InitError(f"Invalid existing manifest {manifest_path}: expected JSON object.")
+    return data
+
+
+def _prompt_category_selection(
+    cat: CategorySpec,
+    mod_map: Mapping[str, ModuleSpec],
+    default_ids: Sequence[str] | None = None,
+) -> list[str]:
     ordered_mods = list(mod_map.values())
     print(f"\n[{cat.label}] {cat.description}")
     if not cat.is_required:
@@ -551,9 +595,22 @@ def _prompt_category_selection(cat: CategorySpec, mod_map: Mapping[str, ModuleSp
     for idx, mod in enumerate(ordered_mods, start=1):
         print(f"  {idx}) {mod.id} — {mod.name}")
 
+    if default_ids is not None:
+        resolved_defaults = [mod_id for mod_id in default_ids if mod_id in mod_map]
+    else:
+        resolved_defaults = _default_ids_for_category(cat, mod_map)
+
+    if cat.is_required and not resolved_defaults:
+        resolved_defaults = _default_ids_for_category(cat, mod_map)
+
     if cat.allows_multiple:
-        raw = input("Select comma-separated numbers or IDs [0]: ").strip()
-        if not raw or raw == "0" or raw.lower() == "none":
+        default_display = ",".join(resolved_defaults) if resolved_defaults else "0"
+        raw = input(f"Select comma-separated numbers or IDs [{default_display}]: ").strip()
+        if not raw:
+            return list(resolved_defaults)
+        if raw == "0" or raw.lower() == "none":
+            if cat.is_required:
+                raise InitError(f"Category '{cat.id}' is required and cannot be 'none'.")
             return []
         chosen = [
             _resolve_choice_token(token.strip(), cat.id, ordered_mods, mod_map)
@@ -562,10 +619,10 @@ def _prompt_category_selection(cat: CategorySpec, mod_map: Mapping[str, ModuleSp
         ]
         return list(dict.fromkeys(chosen))
 
-    default_display = "0" if cat.default == "none" else str(cat.default)
+    default_display = resolved_defaults[0] if resolved_defaults else "0"
     raw = input(f"Select option [{default_display}]: ").strip()
     if not raw:
-        return [] if cat.default == "none" else [str(cat.default)]
+        return list(resolved_defaults)
     if raw == "0" or raw.lower() == "none":
         if cat.is_required:
             raise InitError(f"Category '{cat.id}' is required and cannot be 'none'.")
@@ -579,11 +636,28 @@ def interactive_prompt(
     initial_selections: Mapping[str, list[str]],
     initial_params: Mapping[str, str],
     target_dir: Path | None = None,
+    default_selections: Mapping[str, list[str]] | None = None,
+    default_params: Mapping[str, str] | None = None,
 ) -> tuple[str, dict[str, list[str]], dict[str, str]]:
     """Run interactive terminal prompts for any unspecified stack categories and parameters."""
+    if default_selections is None or default_params is None:
+        manifest = _load_existing_manifest(target_dir)
+        if default_selections is None:
+            default_selections = _parse_module_selection_map(manifest.get("selected_modules"))
+        if default_params is None:
+            default_params = {
+                str(k): str(v) for k, v in (manifest.get("parameters") or {}).items() if v is not None
+            }
+        if manifest.get("project_name") and target_dir is not None:
+            fallback_name = target_dir.name if target_dir.name != "agy_template" else "my-project"
+            if not initial_project_name or initial_project_name == fallback_name:
+                initial_project_name = str(manifest["project_name"])
+
     print("\n=== Antigravity Template Initializer (agy_template) ===\n")
     if target_dir is not None:
         print(f"Target directory: {target_dir}\n")
+    if default_selections or default_params:
+        print("Detected existing .agy-manifest.json — pre-populating defaults (press Enter to keep).\n")
     entered_name = input(f"Project name [{initial_project_name}]: ").strip()
     project_name = entered_name or initial_project_name
 
@@ -592,7 +666,11 @@ def interactive_prompt(
         if cat.id in initial_selections:
             selections[cat.id] = list(initial_selections[cat.id])
         else:
-            selections[cat.id] = _prompt_category_selection(cat, catalog.modules.get(cat.id, {}))
+            selections[cat.id] = _prompt_category_selection(
+                cat,
+                catalog.modules.get(cat.id, {}),
+                default_ids=default_selections.get(cat.id) if default_selections else None,
+            )
 
     params = dict(initial_params)
     for cat in catalog.categories:
@@ -601,8 +679,9 @@ def interactive_prompt(
             for param in mod.parameters:
                 if param.name in params:
                     continue
-                entered = input(f"\nParameter {param.name} ({param.description}) [{param.default}]: ").strip()
-                params[param.name] = entered or param.default
+                default_val = default_params.get(param.name) or param.default
+                entered = input(f"\nParameter {param.name} ({param.description}) [{default_val}]: ").strip()
+                params[param.name] = entered or default_val
 
     return project_name, selections, params
 
@@ -619,12 +698,7 @@ def normalize_selections(
     for cat in catalog.categories:
         chosen_ids = raw_selections.get(cat.id)
         if chosen_ids is None:
-            if isinstance(cat.default, tuple):
-                chosen_ids = list(cat.default)
-            elif cat.default and cat.default != "none":
-                chosen_ids = [cat.default]
-            else:
-                chosen_ids = []
+            chosen_ids = _default_ids_for_category(cat)
 
         if not cat.allows_multiple and len(chosen_ids) > 1:
             raise InitError(f"Category '{cat.id}' allows at most 1 module; got {chosen_ids}")
@@ -919,16 +993,258 @@ def prune_template_scaffolding(target_root: Path, keep_engine: bool) -> list[str
     return removed
 
 
-def copy_staged_to_target(stage_dir: Path, target_dir: Path) -> list[str]:
-    """Copy staged files into target_dir preserving metadata and executable bits."""
-    written: list[str] = []
+def _is_preserved_brownfield_path(rel: Path) -> bool:
+    return rel == Path("README.md") or (len(rel.parts) > 0 and rel.parts[0] == "docs")
+
+
+def _merge_text_lines(
+    existing_text: str,
+    staged_text: str,
+    *,
+    dedupe_env_keys: bool = False,
+    blank_separator: bool = False,
+) -> str:
+    """Append deduplicated non-empty lines from staged_text onto existing_text."""
+    if not existing_text:
+        return staged_text
+    existing_lines = existing_text.splitlines()
+    seen_lines = {line.strip() for line in existing_lines if line.strip()}
+    seen_keys: set[str] = set()
+    if dedupe_env_keys:
+        for line in existing_lines:
+            match = ENV_KEY_RE.match(line.strip())
+            if match:
+                seen_keys.add(match.group(1))
+
+    appended: list[str] = []
+    pending_blank = False
+    for line in staged_text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if appended:
+                pending_blank = True
+            continue
+        if stripped in seen_lines:
+            continue
+        if dedupe_env_keys:
+            match = ENV_KEY_RE.match(stripped)
+            if match and match.group(1) in seen_keys:
+                continue
+            if match:
+                seen_keys.add(match.group(1))
+        seen_lines.add(stripped)
+        if not appended and blank_separator and existing_lines and existing_lines[-1].strip():
+            appended.append("")
+        elif pending_blank and appended:
+            appended.append("")
+        pending_blank = False
+        appended.append(line)
+
+    if not appended:
+        return existing_text
+    return "\n".join([*existing_lines, *appended]) + "\n"
+
+
+def _cleanup_empty_parents(path: Path, stop_at: Path) -> None:
+    resolved_stop = stop_at.resolve()
+    parent = path.parent.resolve()
+    while parent != resolved_stop and parent.is_relative_to(resolved_stop):
+        if not parent.is_dir() or any(parent.iterdir()):
+            break
+        parent.rmdir()
+        parent = parent.parent
+
+
+def _module_owned_paths(
+    mod: ModuleSpec,
+    new_active_skills: set[str],
+    prev_render_context: dict[str, Any],
+) -> tuple[set[Path], set[Path]]:
+    """Collect harness files and skill directories belonging to a single module."""
+    stale_dirs: set[Path] = set()
+    stale_files: set[Path] = set()
+
+    skills_dir = mod.path / "skills"
+    if skills_dir.is_dir():
+        for skill_dir in skills_dir.iterdir():
+            if skill_dir.is_dir() and skill_dir.name not in new_active_skills:
+                stale_dirs.add(Path(".agents") / "skills" / skill_dir.name)
+
+    for hook_subdir in ("pre-commit.d", "pre-push.d"):
+        hook_src = mod.path / "hooks" / hook_subdir
+        if hook_src.is_dir():
+            for item in hook_src.rglob("*"):
+                if item.is_file():
+                    stale_files.add(Path(".githooks") / hook_subdir / item.relative_to(hook_src))
+
+    if (mod.path / "hooks" / "commit-msg.json").is_file():
+        stale_files.add(Path(".githooks") / "commit-msg.json")
+    if (mod.path / "mcp_config.fragment.json").is_file():
+        stale_files.add(Path(".agents") / "mcp_config.example.json")
+
+    files_dir = mod.path / "files"
+    if files_dir.is_dir():
+        for item in files_dir.rglob("*"):
+            if item.is_file():
+                rel = item.relative_to(files_dir)
+                if not _is_preserved_brownfield_path(rel) and str(rel) not in MERGED_BROWNFIELD_FILES:
+                    stale_files.add(rel)
+
+    render_py = mod.path / "render.py"
+    if render_py.is_file():
+        render_fn = load_renderer(render_py, f"agy_prune_{mod.category}_{mod.id}")
+        for rel_str in render_fn(prev_render_context):
+            rel = Path(rel_str)
+            if (
+                not rel.is_absolute()
+                and ".." not in rel.parts
+                and not _is_preserved_brownfield_path(rel)
+                and str(rel) not in MERGED_BROWNFIELD_FILES
+            ):
+                stale_files.add(rel)
+
+    return stale_files, stale_dirs
+
+
+def _collect_deselected_module_files(
+    catalog: Catalog,
+    previous_manifest: Mapping[str, Any],
+    selected_modules: Sequence[ModuleSpec],
+    staged_rel_set: set[Path],
+    stage_dir: Path,
+) -> tuple[list[Path], list[Path]]:
+    """Compute stale harness files and skill directories owned by deselected modules."""
+    if not previous_manifest:
+        return [], []
+
+    prev_selection_map = _parse_module_selection_map(previous_manifest.get("selected_modules"))
+    selected_keys = {(mod.category, mod.id) for mod in selected_modules}
+    deselected_mods = [
+        catalog.modules[cat_id][mod_id]
+        for cat_id, mod_ids in prev_selection_map.items()
+        for mod_id in mod_ids
+        if (cat_id, mod_id) not in selected_keys and mod_id in catalog.modules.get(cat_id, {})
+    ]
+
+    skills_stage_root = stage_dir / ".agents" / "skills"
+    new_active_skills = (
+        {p.name for p in skills_stage_root.iterdir() if p.is_dir()}
+        if skills_stage_root.is_dir()
+        else set()
+    )
+
+    stale_dirs = {
+        Path(".agents") / "skills" / skill_name
+        for skill_name in (previous_manifest.get("active_skills") or [])
+        if isinstance(skill_name, str) and skill_name and skill_name not in new_active_skills
+    }
+
+    prev_project_name = str(previous_manifest.get("project_name") or "project")
+    prev_render_context = {
+        "project_name": prev_project_name,
+        "project_slug": str(previous_manifest.get("project_slug") or slugify(prev_project_name)),
+        "params": {
+            str(k): str(v) for k, v in (previous_manifest.get("parameters") or {}).items() if v is not None
+        },
+        "ci_jobs": [],
+        "dependabot_ecosystems": [],
+        "pr_checklist": [],
+        "pr_ticket_syntax": "#<id>",
+        "branch_convention": "feature/<ticket-id>-<short-slug> or fix/<ticket-id>-<short-slug>",
+    }
+
+    stale_files: set[Path] = set()
+    for mod in deselected_mods:
+        mod_files, mod_dirs = _module_owned_paths(mod, new_active_skills, prev_render_context)
+        stale_files.update(mod_files)
+        stale_dirs.update(mod_dirs)
+
+    filtered_files = sorted(
+        rel
+        for rel in stale_files
+        if rel not in staged_rel_set and rel != Path(".agy-manifest.json")
+    )
+    return filtered_files, sorted(stale_dirs)
+
+
+def prune_stale_harness_files(
+    target_dir: Path,
+    stale_files: Sequence[Path],
+    stale_dirs: Sequence[Path],
+) -> list[str]:
+    """Delete stale harness files/skill dirs from deselected modules without touching user files."""
+    removed: list[str] = []
+    for rel_dir in stale_dirs:
+        full_dir = resolve_safe_subpath(target_dir, rel_dir)
+        if full_dir.is_dir():
+            shutil.rmtree(full_dir)
+            removed.append(str(rel_dir))
+            _cleanup_empty_parents(full_dir, target_dir)
+    for rel_file in stale_files:
+        full_file = resolve_safe_subpath(target_dir, rel_file)
+        if full_file.is_file() or full_file.is_symlink():
+            full_file.unlink()
+            removed.append(str(rel_file))
+            _cleanup_empty_parents(full_file, target_dir)
+    return removed
+
+
+def _merge_brownfield_file(rel: Path, staged_file: Path, dest_file: Path) -> str | None:
+    """Return merged file contents if new lines need to be appended, else None."""
+    existing_text = dest_file.read_text(encoding="utf-8")
+    staged_text = staged_file.read_text(encoding="utf-8")
+    is_env = rel == Path(".env.example")
+    merged = _merge_text_lines(
+        existing_text,
+        staged_text,
+        dedupe_env_keys=is_env,
+        blank_separator=is_env,
+    )
+    return merged if merged != existing_text else None
+
+
+def _plan_target_operations(
+    stage_dir: Path,
+    target_dir: Path,
+    preserve_brownfield: bool,
+) -> tuple[list[Path], list[Path], dict[Path, str]]:
+    """Partition staged files into direct writes, preserved paths, and merge contents."""
+    to_write: list[Path] = []
+    preserved: list[Path] = []
+    to_merge: dict[Path, str] = {}
     for item in sorted(stage_dir.rglob("*")):
         if item.is_dir():
             continue
         rel = item.relative_to(stage_dir)
         dest = target_dir / rel
+        if preserve_brownfield and dest.exists():
+            if _is_preserved_brownfield_path(rel):
+                preserved.append(rel)
+                continue
+            if str(rel) in MERGED_BROWNFIELD_FILES and dest.is_file():
+                merged = _merge_brownfield_file(rel, item, dest)
+                if merged is not None:
+                    to_merge[rel] = merged
+                continue
+        to_write.append(rel)
+    return to_write, preserved, to_merge
+
+
+def copy_staged_to_target(
+    stage_dir: Path,
+    target_dir: Path,
+    preserve_brownfield: bool = False,
+) -> list[str]:
+    """Copy staged files into target_dir, preserving/merging brownfield files when requested."""
+    written: list[str] = []
+    to_write, _, to_merge = _plan_target_operations(stage_dir, target_dir, preserve_brownfield)
+    for rel, merged in to_merge.items():
+        write_text(target_dir / rel, merged)
+        written.append(str(rel))
+    for rel in to_write:
+        dest = target_dir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(item, dest)
+        shutil.copy2(stage_dir / rel, dest)
         written.append(str(rel))
     return written
 
@@ -980,63 +1296,117 @@ def _run_list_modules(catalog: Catalog, as_json: bool) -> int:
     return 0
 
 
+def _filter_stale_manifest_params(
+    catalog: Catalog,
+    selections: Mapping[str, list[str]],
+    explicit_params: Mapping[str, str],
+    merged_params: Mapping[str, str],
+) -> dict[str, str]:
+    """Drop manifest-only parameters whose declaring module is no longer selected."""
+    active_param_names: set[str] = set()
+    for cat in catalog.categories:
+        cat_mods = catalog.modules.get(cat.id, {})
+        chosen_ids = selections.get(cat.id)
+        if chosen_ids is None:
+            chosen_ids = _default_ids_for_category(cat, cat_mods)
+        for mod_id in chosen_ids:
+            mod = cat_mods.get(mod_id)
+            if mod is not None:
+                active_param_names.update(p.name for p in mod.parameters)
+    return {
+        k: v
+        for k, v in merged_params.items()
+        if k in explicit_params or k in active_param_names
+    }
+
+
 def _resolve_init_inputs(
     args: argparse.Namespace,
     catalog: Catalog,
     default_project_name: str,
     target_dir: Path | None = None,
+    existing_manifest: Mapping[str, Any] | None = None,
 ) -> tuple[str, dict[str, list[str]], dict[str, str]]:
-    raw_selections: dict[str, list[str]] = {}
-    params = parse_param_overrides(args.param, args.jira_key)
+    manifest = dict(existing_manifest) if existing_manifest is not None else _load_existing_manifest(target_dir)
+    manifest_name = manifest.get("project_name")
+    manifest_selections = _parse_module_selection_map(manifest.get("selected_modules"))
+    manifest_params = {
+        str(k): str(v) for k, v in (manifest.get("parameters") or {}).items() if v is not None
+    }
+
+    explicit_selections: dict[str, list[str]] = {}
+    cli_params = parse_param_overrides(args.param, args.jira_key)
+    config_params: dict[str, str] = {}
     project_name = args.project_name
 
     if args.config:
         cfg = load_json(Path(args.config))
         project_name = project_name or cfg.get("project_name")
-        for cat_id, val in (cfg.get("modules") or {}).items():
-            if isinstance(val, list):
-                raw_selections[cat_id] = [v for v in val if v and v != "none"]
-            elif val and val != "none":
-                raw_selections[cat_id] = [str(val)]
-            else:
-                raw_selections[cat_id] = []
+        explicit_selections.update(_parse_module_selection_map(cfg.get("modules")))
         for k, v in (cfg.get("parameters") or {}).items():
-            params.setdefault(k, str(v))
+            config_params[str(k)] = str(v)
 
     for cat in catalog.categories:
         cli_val = getattr(args, f"cat_{cat.id}", None)
         if cli_val is None:
             continue
         if cli_val.strip().lower() in ("", "none"):
-            raw_selections[cat.id] = []
+            explicit_selections[cat.id] = []
         else:
-            raw_selections[cat.id] = [
+            explicit_selections[cat.id] = [
                 t.strip() for t in cli_val.split(",") if t.strip() and t.strip().lower() != "none"
             ]
+
+    explicit_params = {**config_params, **cli_params}
+    effective_project_name = str(project_name or manifest_name or default_project_name)
+    merged_selections = {**manifest_selections, **explicit_selections}
+    merged_params = {**manifest_params, **explicit_params}
 
     needs_interactive = (
         not args.yes
         and not args.dry_run
         and not args.config
-        and len(raw_selections) < len(catalog.categories)
+        and len(explicit_selections) < len(catalog.categories)
     )
     if not needs_interactive:
-        return project_name or default_project_name, raw_selections, params
+        return (
+            effective_project_name,
+            merged_selections,
+            _filter_stale_manifest_params(catalog, merged_selections, explicit_params, merged_params),
+        )
 
     if not sys.stdin.isatty():
         raise InitError("Non-interactive shell requires --yes (or --dry-run) when omitting interactive prompts.", exit_code=2)
 
-    return interactive_prompt(catalog, project_name or default_project_name, raw_selections, params, target_dir=target_dir)
+    return interactive_prompt(
+        catalog,
+        effective_project_name,
+        explicit_selections,
+        explicit_params,
+        target_dir=target_dir,
+        default_selections=manifest_selections,
+        default_params=manifest_params,
+    )
 
 
 def _execute_init(args: argparse.Namespace, catalog: Catalog) -> int:
     target_dir, is_inplace_template = resolve_target_dir(args.output_dir)
     default_project_name = target_dir.name if target_dir.name != "agy_template" else "my-project"
+    existing_manifest = _load_existing_manifest(target_dir)
 
     final_project_name, raw_selections, params = _resolve_init_inputs(
-        args, catalog, default_project_name, target_dir=target_dir
+        args, catalog, default_project_name, target_dir=target_dir, existing_manifest=existing_manifest
     )
-    final_project_slug = slugify(args.project_slug or final_project_name)
+    if args.project_slug:
+        final_project_slug = slugify(args.project_slug)
+    elif (
+        existing_manifest
+        and final_project_name == existing_manifest.get("project_name")
+        and existing_manifest.get("project_slug")
+    ):
+        final_project_slug = slugify(str(existing_manifest["project_slug"]))
+    else:
+        final_project_slug = slugify(final_project_name)
     selected_modules, resolved_params = normalize_selections(catalog, raw_selections, params)
 
     with tempfile.TemporaryDirectory(prefix="agy_init_") as tmp:
@@ -1045,14 +1415,34 @@ def _execute_init(args: argparse.Namespace, catalog: Catalog) -> int:
         manifest = stage_workspace(
             stage_dir, final_project_name, final_project_slug, catalog, selected_modules, resolved_params, REPO_ROOT
         )
-        staged_files = sorted(str(p.relative_to(stage_dir)) for p in stage_dir.rglob("*") if p.is_file())
+        staged_rel_paths = [p.relative_to(stage_dir) for p in sorted(stage_dir.rglob("*")) if p.is_file()]
+        staged_rel_set = set(staged_rel_paths)
+
+        stale_files, stale_dirs = (
+            ([], [])
+            if (is_inplace_template and not args.keep_template_engine)
+            else _collect_deselected_module_files(
+                catalog, existing_manifest, selected_modules, staged_rel_set, stage_dir
+            )
+        )
 
         if args.dry_run:
+            to_write, preserved, to_merge = _plan_target_operations(
+                stage_dir, target_dir, preserve_brownfield=not is_inplace_template
+            )
+            stale_existing = [
+                str(p) for p in stale_dirs if (target_dir / p).is_dir()
+            ] + [
+                str(p) for p in stale_files if (target_dir / p).is_file() or (target_dir / p).is_symlink()
+            ]
             summary = {
                 "mode": "output-dir" if args.output_dir else "in-place",
                 "target_dir": str(target_dir),
                 "manifest": manifest,
-                "files_to_write": staged_files,
+                "files_to_write": [str(p) for p in to_write],
+                "preserved_files": [str(p) for p in preserved],
+                "merged_files": [str(p) for p in to_merge],
+                "stale_files_to_prune": stale_existing,
                 "would_prune_engine": is_inplace_template and not args.keep_template_engine,
             }
             print(json.dumps(summary, indent=2))
@@ -1066,7 +1456,10 @@ def _execute_init(args: argparse.Namespace, catalog: Catalog) -> int:
             if license_src.is_file() and not (target_dir / "LICENSE").exists():
                 shutil.copy2(license_src, target_dir / "LICENSE")
 
-        copy_staged_to_target(stage_dir, target_dir)
+        if stale_files or stale_dirs:
+            prune_stale_harness_files(target_dir, stale_files, stale_dirs)
+
+        copy_staged_to_target(stage_dir, target_dir, preserve_brownfield=not is_inplace_template)
 
     if (target_dir / ".git").exists():
         subprocess.run(["git", "-C", str(target_dir), "config", "core.hooksPath", ".githooks"], check=False, capture_output=True)
