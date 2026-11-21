@@ -1,0 +1,63 @@
+{
+  "id": "java-spring",
+  "category": "backend",
+  "name": "Java 21+ / Spring Boot 3",
+  "description": "Backend governance for Java 21+, Spring Boot 3 REST/gRPC services, constructor injection, Bean Validation, DTO boundaries, and Maven/Gradle verification.",
+  "verification_commands": [
+    "./mvnw test  # Maven projects (or ./gradlew test for Gradle projects)"
+  ],
+  "evaluators": [
+    {
+      "name": "Java 21+ / Spring Boot Architecture, Security & Data Evaluator",
+      "scope": "Constructor injection, Bean Validation (@Valid), immutable DTO boundaries without entity exposure, Spring Security authz/CSRF rules, @Transactional scope, and MockMvc/Testcontainers tests."
+    }
+  ],
+  "pr_checklist": [
+    "Controllers accept and return validated DTOs (`@Valid`, Java `record`s) and never expose raw JPA entities",
+    "Spring beans use constructor injection (zero field `@Autowired`) with explicit `@Transactional` service boundaries",
+    "Spring Boot test suite (`./mvnw test` or `./gradlew test`) passes"
+  ],
+  "agents_md_rules": [
+    "**Java & Spring Boot Standards:** Follow [`.agents/skills/backend-java-spring/SKILL.md`](.agents/skills/backend-java-spring/SKILL.md) (Java 21+, Spring Boot 3, constructor injection, `@Valid` DTO boundaries, `@Transactional` hygiene, `./mvnw test` / `./gradlew test`)."
+  ],
+  "gitignore": [
+    "target/",
+    "build/",
+    ".gradle/",
+    "*.class",
+    "hs_err_pid*"
+  ],
+  "env_example": [
+    "# Backend (Java / Spring Boot)",
+    "SPRING_PROFILES_ACTIVE=local",
+    "SERVER_PORT=8080"
+  ],
+  "dependabot_ecosystems": [
+    "maven"
+  ],
+  "ci_jobs": [
+    {
+      "id": "backend-java",
+      "dedupe_key": "backend-java",
+      "name": "Java / Spring Boot Build & Test",
+      "runtimes": {
+        "java": "21"
+      },
+      "docker_image": "eclipse-temurin:21-jdk",
+      "caches": [
+        "maven"
+      ],
+      "guard_files": [
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts"
+      ],
+      "steps": [
+        {
+          "name": "Build and run Spring Boot tests",
+          "run": "if [ -f pom.xml ]; then if [ -x ./mvnw ]; then ./mvnw -B test; elif [ -f mvnw ]; then chmod +x mvnw && ./mvnw -B test; elif command -v mvn >/dev/null 2>&1; then mvn -B test; else echo 'No ./mvnw or mvn found; skipping Maven test'; fi; elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then if [ -x ./gradlew ]; then ./gradlew test --no-daemon; elif [ -f gradlew ]; then chmod +x gradlew && ./gradlew test --no-daemon; elif command -v gradle >/dev/null 2>&1; then gradle test --no-daemon; else echo 'No ./gradlew or gradle found; skipping Gradle test'; fi; fi"
+        }
+      ]
+    }
+  ]
+}

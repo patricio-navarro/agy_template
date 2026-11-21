@@ -1,0 +1,86 @@
+{
+  "id": "nextjs-ts",
+  "category": "frontend",
+  "name": "Next.js (App Router) + TypeScript",
+  "description": "Frontend governance for Next.js App Router, React Server Components, TypeScript strictness, accessibility, and Core Web Vitals.",
+  "verification_commands": [
+    "npx tsc --noEmit",
+    "npm run lint",
+    "npm test",
+    "npm run build"
+  ],
+  "evaluators": [
+    {
+      "name": "Next.js App Router, RSC Boundaries & TypeScript Evaluator",
+      "scope": "Server vs Client Component ('use client') boundaries, Server Actions auth/validation, streaming/Suspense caching semantics, zero secret leaks to client bundles, and strict TypeScript contracts."
+    },
+    {
+      "name": "UI, Accessibility & Core Web Vitals Evaluator",
+      "scope": "WCAG/ARIA semantics, :focus-visible, mobile 320px-375px layout stability, next/image and next/font usage, and LCP/INP/CLS Core Web Vitals budgets."
+    }
+  ],
+  "pr_checklist": [
+    "Server/Client Component boundaries preserve `'use client'` at leaves with zero server secrets or non-`NEXT_PUBLIC_*` env vars leaked to client bundles",
+    "Audited accessibility (ARIA semantics, `:focus-visible`, `type=\"button\"`), mobile layout, and Core Web Vitals (`next/image`, `next/font`, LCP/INP/CLS)",
+    "Type check (`npx tsc --noEmit`), lint (`npm run lint`), tests (`npm test`), and production build (`npm run build`) pass"
+  ],
+  "agents_md_rules": [
+    "**Frontend (Next.js App Router & TypeScript):** Whenever modifying `app/`, UI components, Server Actions, or client hooks, follow [`.agents/skills/frontend-nextjs-ts/SKILL.md`](.agents/skills/frontend-nextjs-ts/SKILL.md)."
+  ],
+  "gitignore": [
+    "node_modules/",
+    ".next/",
+    "out/",
+    "coverage/",
+    "*.tsbuildinfo",
+    "next-env.d.ts",
+    "*.local"
+  ],
+  "env_example": [
+    "# Frontend (Next.js)",
+    "NEXT_PUBLIC_APP_NAME=\"{{PROJECT_NAME}}\"",
+    "NEXT_PUBLIC_APP_URL=\"http://localhost:3000\""
+  ],
+  "dependabot_ecosystems": [
+    "npm"
+  ],
+  "ci_jobs": [
+    {
+      "id": "node-workspace",
+      "dedupe_key": "node-workspace",
+      "name": "Node.js Lint, Test & Build",
+      "runtimes": {
+        "node": "22"
+      },
+      "docker_image": "node:22-slim",
+      "caches": [
+        "npm"
+      ],
+      "guard_files": [
+        "package.json"
+      ],
+      "steps": [
+        {
+          "name": "Install dependencies",
+          "run": "if [ -f package-lock.json ]; then npm ci; else npm install; fi"
+        },
+        {
+          "name": "Type check",
+          "run": "if [ -f tsconfig.json ] && [ -x node_modules/.bin/tsc ]; then npx --no-install tsc --noEmit; else echo 'No tsconfig.json or local tsc found; skipping type check'; fi"
+        },
+        {
+          "name": "Lint",
+          "run": "npm run lint --if-present"
+        },
+        {
+          "name": "Run unit tests",
+          "run": "npm test --if-present"
+        },
+        {
+          "name": "Verify production build",
+          "run": "npm run build --if-present"
+        }
+      ]
+    }
+  ]
+}
