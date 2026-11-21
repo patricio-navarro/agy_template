@@ -1,0 +1,6 @@
+{
+  "header_regex": "^(feat|fix|refactor|docs|test|chore|ci|perf|build|revert)(\\([A-Za-z0-9_#/.-]+\\))?!?: .+",
+  "ticket_required_types": ["feat", "fix", "refactor"],
+  "ticket_regex": "\\b{{LINEAR_TEAM_KEY}}-[0-9]+\\b",
+  "example": "feat({{LINEAR_TEAM_KEY}}-123): implement health check endpoint"
+}

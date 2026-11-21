@@ -1,0 +1,12 @@
+{
+  "id": "gitlab",
+  "category": "git-hosting",
+  "name": "GitLab (CI/CD + MRs)",
+  "description": "Merge Request workflow via glab CLI, dynamic GitLab CI/CD pipeline generator (.gitlab-ci.yml), and MR template.",
+  "pr_checklist": [
+    "GitLab CI pipeline (`.gitlab-ci.yml`) is green and all MR discussion threads are resolved"
+  ],
+  "agents_md_rules": [
+    "**Git Hosting (GitLab MRs & CI/CD):** Follow [`.agents/skills/git-gitlab-mr/SKILL.md`](.agents/skills/git-gitlab-mr/SKILL.md). Use `.gitlab/merge_request_templates/Default.md` via `glab mr create`, keep `.gitlab-ci.yml` green, and never merge to `main` without explicit user approval."
+  ]
+}
