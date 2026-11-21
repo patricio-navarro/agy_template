@@ -1,0 +1,22 @@
+{
+  "command_rules": [
+    {
+      "id": "confirm-postgres-destructive-cli",
+      "pattern": "(?:^|[;&|]\\s*)(?:[A-Z_][A-Z0-9_]*=[^\\s;&|]+\\s+){0,5}(?:(?:npx|pnpm\\s+dlx|bunx|poetry\\s+run|uv\\s+run)\\s+)?(?:dropdb\\b|pg_restore\\b[^;&|\\n]*\\s(?:-c|--clean)\\b|flyway\\s+clean\\b|prisma\\s+(?:migrate\\s+reset|db\\s+push\\b[^;&|\\n]*(?:--force-reset|--accept-data-loss))|alembic\\s+downgrade\\s+base\\b|drizzle-kit\\s+drop\\b)",
+      "decision": "force_ask",
+      "reason": "Destructive PostgreSQL database or migration reset command detected. Explicit human confirmation is required."
+    },
+    {
+      "id": "confirm-postgres-destructive-sql",
+      "pattern": "(?i)(?:^|[;&|]\\s*)(?:[A-Z_][A-Z0-9_]*=[^\\s;&|]+\\s+){0,5}(?:docker(?:\\s+compose)?\\s+exec\\s+(?:-[A-Za-z]+\\s+){0,4}[A-Za-z0-9_.-]+\\s+)?psql\\b[^;&|\\n]*\\b(?:DROP\\s+(?:DATABASE|SCHEMA|TABLE)|TRUNCATE(?:\\s+(?:TABLE|ONLY))?)\\b",
+      "decision": "force_ask",
+      "reason": "Destructive inline SQL (DROP DATABASE/SCHEMA/TABLE or TRUNCATE) via psql detected. Explicit human confirmation is required."
+    },
+    {
+      "id": "confirm-postgres-piped-destructive-sql",
+      "pattern": "(?i)(?:^|[;&|]\\s*)(?:echo|printf)\\s+['\"]?(?:DROP\\s+(?:DATABASE|SCHEMA|TABLE)|TRUNCATE(?:\\s+(?:TABLE|ONLY))?)\\b[^|\\n]*\\|\\s*(?:[A-Z_][A-Z0-9_]*=[^\\s;&|]+\\s+){0,5}(?:docker(?:\\s+compose)?\\s+exec\\s+(?:-[A-Za-z]+\\s+){0,4}[A-Za-z0-9_.-]+\\s+)?psql\\b",
+      "decision": "force_ask",
+      "reason": "Destructive piped SQL (DROP DATABASE/SCHEMA/TABLE or TRUNCATE) into psql detected. Explicit human confirmation is required."
+    }
+  ]
+}

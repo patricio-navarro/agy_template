@@ -1,0 +1,16 @@
+{
+  "command_rules": [
+    {
+      "id": "confirm-alloydb-destructive-delete",
+      "pattern": "(?:^|[;&|]\\s*)(?:[A-Z_][A-Z0-9_]*=[^\\s;&|]+\\s+){0,5}gcloud\\s+(?:(?:alpha|beta)\\s+)?alloydb\\s+(?:clusters|instances|backups|users)\\s+delete\\b",
+      "decision": "force_ask",
+      "reason": "Destructive gcloud alloydb delete operation detected (cluster, instance, backup, or user). Explicit human confirmation is required."
+    },
+    {
+      "id": "confirm-alloydb-topology-mutation",
+      "pattern": "(?:^|[;&|]\\s*)(?:[A-Z_][A-Z0-9_]*=[^\\s;&|]+\\s+){0,5}gcloud\\s+(?:(?:alpha|beta)\\s+)?alloydb\\s+clusters\\s+(?:failover|promote|switchover|restore)\\b",
+      "decision": "force_ask",
+      "reason": "High-impact gcloud alloydb cluster failover, promotion, switchover, or restore operation detected. Explicit human confirmation is required."
+    }
+  ]
+}
