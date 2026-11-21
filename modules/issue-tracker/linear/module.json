@@ -1,0 +1,26 @@
+{
+  "id": "linear",
+  "category": "issue-tracker",
+  "name": "Linear",
+  "description": "Tracks cycles, projects, features, and bugs in Linear with branch/commit key enforcement.",
+  "parameters": [
+    {
+      "name": "LINEAR_TEAM_KEY",
+      "description": "Uppercase Linear team key (e.g., TEAM, ENG, APP).",
+      "default": "TEAM",
+      "regex": "^[A-Z][A-Z0-9]{1,9}$"
+    }
+  ],
+  "branch_convention": "feature/{{LINEAR_TEAM_KEY}}-<num>-<short-slug> or fix/{{LINEAR_TEAM_KEY}}-<num>-<short-slug>",
+  "pr_ticket_syntax": "{{LINEAR_TEAM_KEY}}-<num>",
+  "pr_checklist": [
+    "Linear issue `{{LINEAR_TEAM_KEY}}-<num>` acceptance criteria verified and workflow status updated"
+  ],
+  "agents_md_rules": [
+    "**Issue Tracker (Linear — {{LINEAR_TEAM_KEY}}):** Follow [`.agents/skills/tracker-linear/SKILL.md`](.agents/skills/tracker-linear/SKILL.md). Reference `{{LINEAR_TEAM_KEY}}-<num>` in every feature/fix branch, commit, and Pull/Merge Request."
+  ],
+  "env_example": [
+    "# Linear Integration (local CLI / automation reference — never commit secrets)",
+    "LINEAR_TEAM_KEY=\"{{LINEAR_TEAM_KEY}}\""
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "id": "postgres",
+  "category": "data",
+  "name": "PostgreSQL",
+  "description": "PostgreSQL schema design, parameterized queries, transactional zero-downtime migrations, connection pooling, and Docker/Cloud SQL parity.",
+  "verification_commands": [
+    "pg_isready -d \"${DATABASE_URL:-postgresql://127.0.0.1:5432/{{PROJECT_SLUG}}}\"  # verify PostgreSQL readiness before running migrations or integration tests",
+    "psql \"${DATABASE_URL:-postgresql://127.0.0.1:5432/{{PROJECT_SLUG}}}\" -v ON_ERROR_STOP=1 -c \"SELECT 1;\"  # verify database connectivity and SQL execution"
+  ],
+  "evaluators": [
+    {
+      "name": "PostgreSQL Data, Query Safety & Migration Evaluator",
+      "scope": "Normalized schema and index design, strictly parameterized queries, transactional zero-downtime expand/contract migrations, bounded connection pooling, and Docker/Cloud SQL parity."
+    }
+  ],
+  "single_concurrency_locks": [
+    "Local PostgreSQL Instance: Only 1 subagent at a time may run migrations, schema resets, or stateful DB integration tests against a shared local container/port `5432`."
+  ],
+  "pr_checklist": [
+    "All SQL queries use bound parameters (zero string interpolation), bounded `LIMIT`/keyset pagination, and connection pooling",
+    "Schema migrations are transactional/idempotent, zero-downtime safe (expand-and-contract, `CREATE INDEX CONCURRENTLY` where required), and preserve rollback safety"
+  ],
+  "agents_md_rules": [
+    "**PostgreSQL Data & Migrations:** Follow [`.agents/skills/data-postgres/SKILL.md`](.agents/skills/data-postgres/SKILL.md) (parameterized queries only, zero-downtime expand/contract migrations, pooled connections, Docker/Cloud SQL parity)."
+  ],
+  "gitignore": [
+    "pgdata/"
+  ],
+  "env_example": [
+    "# PostgreSQL",
+    "DATABASE_URL=\"postgresql://postgres:replace-with-local-dev-password@localhost:5432/{{PROJECT_SLUG}}?sslmode=disable\"",
+    "POSTGRES_HOST=\"localhost\"",
+    "POSTGRES_PORT=\"5432\"",
+    "POSTGRES_DB=\"{{PROJECT_SLUG}}\"",
+    "POSTGRES_USER=\"postgres\"",
+    "POSTGRES_PASSWORD=\"replace-with-local-dev-password\"",
+    "DB_POOL_MIN=\"2\"",
+    "DB_POOL_MAX=\"10\""
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "id": "go-service",
+  "category": "backend",
+  "name": "Go Service (HTTP / gRPC)",
+  "description": "Backend governance for Go 1.22+ HTTP/gRPC services, context propagation, %w error wrapping, race-safe concurrency, and golangci-lint verification.",
+  "verification_commands": [
+    "go vet ./...",
+    "golangci-lint run",
+    "go test -race ./..."
+  ],
+  "evaluators": [
+    {
+      "name": "Go Service Architecture, Context & Concurrency Evaluator",
+      "scope": "HTTP/gRPC handler-service separation, context.Context propagation and timeouts, %w error wrapping with errors.Is/As, bounded goroutine lifecycles, and go test -race coverage."
+    }
+  ],
+  "pr_checklist": [
+    "All I/O paths propagate `context.Context` with explicit timeouts and clean cancellation",
+    "Errors are wrapped with `%w` and inspected via `errors.Is`/`errors.As`; concurrent code avoids shared-memory races and unbounded goroutines",
+    "`go vet ./...`, `golangci-lint run`, and `go test -race ./...` pass"
+  ],
+  "agents_md_rules": [
+    "**Go Backend Standards:** Follow [`.agents/skills/backend-go-service/SKILL.md`](.agents/skills/backend-go-service/SKILL.md) for `context.Context` propagation, `%w` error wrapping, race-safe concurrency, and `go vet` / `golangci-lint` / `go test -race`."
+  ],
+  "gitignore": [
+    "bin/",
+    "dist/",
+    "coverage.out",
+    "coverage.html",
+    "*.test",
+    "*.out"
+  ],
+  "env_example": [
+    "# Backend (Go Service)",
+    "APP_ENV=development",
+    "LOG_LEVEL=info",
+    "PORT=8080"
+  ],
+  "dependabot_ecosystems": [
+    "gomod"
+  ],
+  "ci_jobs": [
+    {
+      "id": "backend-go",
+      "dedupe_key": "backend-go",
+      "name": "Go Vet, Lint & Race Tests",
+      "runtimes": {
+        "go": "1.23"
+      },
+      "docker_image": "golang:1.23",
+      "caches": [
+        "gomod"
+      ],
+      "guard_files": [
+        "go.mod"
+      ],
+      "steps": [
+        {
+          "name": "Download Go modules",
+          "run": "go mod download"
+        },
+        {
+          "name": "Run go vet",
+          "run": "go vet ./..."
+        },
+        {
+          "name": "Run golangci-lint",
+          "run": "if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run; else echo 'golangci-lint not installed; skipping'; fi"
+        },
+        {
+          "name": "Run race-enabled tests",
+          "run": "go test -race ./..."
+        }
+      ]
+    }
+  ]
+}

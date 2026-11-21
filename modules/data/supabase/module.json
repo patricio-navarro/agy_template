@@ -1,0 +1,39 @@
+{
+  "id": "supabase",
+  "category": "data",
+  "name": "Supabase (Auth + Postgres + RLS)",
+  "description": "Supabase Auth, PostgreSQL Row-Level Security (RLS) policy auditing, declarative migrations, and local Supabase CLI workflow.",
+  "verification_commands": [
+    "supabase start  # ensure local Supabase stack is running before DB and RLS verification",
+    "supabase db reset  # replay migrations cleanly and verify idempotent schema and RLS baseline",
+    "supabase test db  # run pgTAP Row-Level Security and database policy tests"
+  ],
+  "evaluators": [
+    {
+      "name": "Supabase Auth & PostgreSQL RLS Security Evaluator",
+      "scope": "RLS enabled on every exposed table, least-privilege anon/authenticated policies, auth.uid() and JWT claim verification, server-only service_role key isolation, and migration/seed safety."
+    }
+  ],
+  "single_concurrency_locks": [
+    "Local Supabase Stack: Only 1 subagent at a time may run `supabase start`, `supabase stop`, `supabase db reset`, or `supabase test db` to prevent local Docker container and port collisions."
+  ],
+  "pr_checklist": [
+    "Every table in `public` (and exposed schemas) enables `ROW LEVEL SECURITY` with explicit per-command policies audited against `data-supabase`",
+    "Migrations replay cleanly via `supabase db reset` and RLS tests (`supabase test db` or integration suite) verify cross-tenant and anonymous access denial"
+  ],
+  "agents_md_rules": [
+    "**Supabase Auth & RLS:** Follow [`.agents/skills/data-supabase/SKILL.md`](.agents/skills/data-supabase/SKILL.md) (RLS enabled on every exposed table, `service_role` server-only, verify via `supabase db reset` and RLS tests)."
+  ],
+  "gitignore": [
+    "supabase/.temp/",
+    "supabase/.branches/"
+  ],
+  "env_example": [
+    "# Supabase",
+    "SUPABASE_URL=\"http://127.0.0.1:54321\"",
+    "SUPABASE_ANON_KEY=\"\"",
+    "SUPABASE_SERVICE_ROLE_KEY=\"\"",
+    "SUPABASE_DB_URL=\"\"",
+    "SUPABASE_PROJECT_REF=\"\""
+  ]
+}

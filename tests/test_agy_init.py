@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -11,6 +13,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AGY_INIT = REPO_ROOT / "agy-init"
@@ -70,14 +73,22 @@ class TestAgyTemplate(unittest.TestCase):
             all_module_ids,
             {
                 "react-vite-ts",
+                "nextjs-ts",
                 "python-fastapi",
                 "node-express-ts",
+                "go-service",
+                "java-spring",
                 "firebase",
+                "postgres",
+                "supabase",
+                "alloydb",
                 "gcp-cloudrun",
                 "github-issues",
                 "jira",
+                "linear",
                 "github",
                 "bitbucket",
+                "gitlab",
             },
         )
 
@@ -606,6 +617,976 @@ class TestAgyTemplate(unittest.TestCase):
         self.assertIn("Error:", proc.stderr)
         self.assertIn("--output-dir", proc.stderr)
         self.assertNotIn("Traceback", proc.stderr)
+
+    def test_merge_text_lines_unit(self) -> None:
+        merged_git = agy_init._merge_text_lines("custom/\n.env", ".DS_Store\n.env\n.env.*\n.DS_Store\n")
+        self.assertEqual(merged_git, "custom/\n.env\n.DS_Store\n.env.*\n")
+
+        unchanged = agy_init._merge_text_lines("custom/\n.env\n", ".env\ncustom/\n")
+        self.assertEqual(unchanged, "custom/\n.env\n")
+
+        merged_env = agy_init._merge_text_lines(
+            "CUSTOM=1\nPORT=3000\n# LOG_LEVEL=WARN\n",
+            "# Header\n\n# Backend\nAPP_ENV=development\nLOG_LEVEL=INFO\nPORT=8080\n",
+            dedupe_env_keys=True,
+            blank_separator=True,
+        )
+        self.assertIn("CUSTOM=1", merged_env)
+        self.assertIn("PORT=3000", merged_env)
+        self.assertNotIn("PORT=8080", merged_env)
+        self.assertIn("APP_ENV=development", merged_env)
+        self.assertIn("LOG_LEVEL=INFO", merged_env)
+        self.assertEqual(agy_init._merge_text_lines("", "A=1\n"), "A=1\n")
+        self.assertEqual(agy_init._merge_text_lines("   \n  \n", "A=1\n"), "A=1\n")
+
+        # When all keys already exist, no orphan top-level banner or section header is appended
+        existing_full = "NODE_ENV=production\nPORT=4000\n"
+        staged_full = (
+            "# Environment variables for Studio App (studio-app)\n\n"
+            "# Backend (Node.js / Express)\n"
+            "NODE_ENV=development\n"
+            "PORT=3000\n"
+        )
+        self.assertEqual(
+            agy_init._merge_text_lines(existing_full, staged_full, dedupe_env_keys=True, blank_separator=True),
+            existing_full,
+        )
+
+    def test_brownfield_preserves_readme_and_docs_and_merges_gitignore_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app_repo = (Path(tmp) / "existing-app").resolve()
+            app_repo.mkdir()
+            _git_init(app_repo)
+
+            readme_body = "# Existing App\nDo not clobber this README.\n"
+            docs_readme_body = "# Existing Docs Hub\nCustom docs overview.\n"
+            custom_doc_body = "# Runbook\nExisting team guide.\n"
+            (app_repo / "README.md").write_text(readme_body, encoding="utf-8")
+            (app_repo / "docs").mkdir()
+            (app_repo / "docs" / "README.md").write_text(docs_readme_body, encoding="utf-8")
+            (app_repo / "docs" / "custom-guide.md").write_text(custom_doc_body, encoding="utf-8")
+            (app_repo / ".gitignore").write_text("custom-build/\n.env\n", encoding="utf-8")
+            (app_repo / ".env.example").write_text(
+                "CUSTOM_SECRET=keep-me\nPORT=3000\nLOG_LEVEL=INFO\n",
+                encoding="utf-8",
+            )
+
+            cmd = [
+                str(AGY_INIT),
+                "--backend",
+                "python-fastapi",
+                "--cloud",
+                "gcp-cloudrun",
+                "--issue-tracker",
+                "github-issues",
+                "--git-hosting",
+                "github",
+                "--yes",
+            ]
+            proc = subprocess.run(cmd, cwd=app_repo, capture_output=True, text=True, check=False)
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+
+            self.assertEqual((app_repo / "README.md").read_text(encoding="utf-8"), readme_body)
+            self.assertEqual((app_repo / "docs" / "README.md").read_text(encoding="utf-8"), docs_readme_body)
+            self.assertEqual((app_repo / "docs" / "custom-guide.md").read_text(encoding="utf-8"), custom_doc_body)
+            self.assertTrue((app_repo / "docs" / "architecture_decisions.md").is_file())
+            self.assertTrue((app_repo / "docs" / "product_strategy.md").is_file())
+            self.assertTrue((app_repo / "docs" / "infrastructure_and_devops.md").is_file())
+
+            gitignore_lines = (app_repo / ".gitignore").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(gitignore_lines[:2], ["custom-build/", ".env"])
+            self.assertEqual(gitignore_lines.count(".env"), 1)
+            self.assertIn(".DS_Store", gitignore_lines)
+            self.assertIn("__pycache__/", gitignore_lines)
+            self.assertIn(".env.sandbox", gitignore_lines)
+
+            env_text = (app_repo / ".env.example").read_text(encoding="utf-8")
+            env_lines = env_text.splitlines()
+            self.assertIn("CUSTOM_SECRET=keep-me", env_lines)
+            self.assertIn("PORT=3000", env_lines)
+            self.assertNotIn("PORT=8080", env_lines)
+            self.assertEqual(env_lines.count("LOG_LEVEL=INFO"), 1)
+            self.assertIn("APP_ENV=development", env_lines)
+            self.assertIn('DEPLOY_REGION="us-central1"', env_lines)
+
+            # Re-running with identical selections must not duplicate lines
+            proc2 = subprocess.run(cmd, cwd=app_repo, capture_output=True, text=True, check=False)
+            self.assertEqual(proc2.returncode, 0, msg=proc2.stderr + proc2.stdout)
+            self.assertEqual((app_repo / ".gitignore").read_text(encoding="utf-8").splitlines(), gitignore_lines)
+            self.assertEqual((app_repo / ".env.example").read_text(encoding="utf-8"), env_text)
+
+    def test_brownfield_writes_readme_and_docs_when_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "fresh-external"
+            out_dir.mkdir()
+            proc = subprocess.run(
+                [
+                    str(AGY_INIT),
+                    "--project-name",
+                    "Fresh External",
+                    "--backend",
+                    "python-fastapi",
+                    "--output-dir",
+                    str(out_dir),
+                    "--yes",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+            self.assertIn("# Fresh External", (out_dir / "README.md").read_text(encoding="utf-8"))
+            self.assertTrue((out_dir / "docs" / "README.md").is_file())
+            self.assertTrue((out_dir / ".gitignore").is_file())
+            self.assertTrue((out_dir / ".env.example").is_file())
+
+    def test_reinit_add_modules_preserves_manifest_defaults_and_params(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app_repo = (Path(tmp) / "reinit-app").resolve()
+            app_repo.mkdir()
+            _git_init(app_repo)
+
+            first = subprocess.run(
+                [
+                    str(AGY_INIT),
+                    "--project-name",
+                    "Order API",
+                    "--project-slug",
+                    "custom-order-api",
+                    "--frontend",
+                    "none",
+                    "--backend",
+                    "python-fastapi",
+                    "--data",
+                    "none",
+                    "--cloud",
+                    "none",
+                    "--issue-tracker",
+                    "jira",
+                    "--jira-key",
+                    "ORD",
+                    "--git-hosting",
+                    "github",
+                    "--yes",
+                ],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(first.returncode, 0, msg=first.stderr + first.stdout)
+
+            # Customize brownfield files before re-init
+            (app_repo / "README.md").write_text("# Order API Custom README\n", encoding="utf-8")
+            (app_repo / "docs" / "architecture_decisions.md").write_text("# Custom ADRs\n", encoding="utf-8")
+            with (app_repo / ".env.example").open("a", encoding="utf-8") as fh:
+                fh.write("CUSTOM_APP_TOKEN=abc123\n")
+
+            # Re-init adding cloud and data modules without re-specifying prior flags
+            second = subprocess.run(
+                [str(AGY_INIT), "--cloud", "gcp-cloudrun", "--data", "firebase", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(second.returncode, 0, msg=second.stderr + second.stdout)
+
+            manifest = json.loads((app_repo / ".agy-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["project_name"], "Order API")
+            self.assertEqual(manifest["project_slug"], "custom-order-api")
+            self.assertEqual(manifest["selected_modules"]["backend"], ["python-fastapi"])
+            self.assertEqual(manifest["selected_modules"]["issue-tracker"], ["jira"])
+            self.assertEqual(manifest["selected_modules"]["git-hosting"], ["github"])
+            self.assertEqual(manifest["selected_modules"]["cloud"], ["gcp-cloudrun"])
+            self.assertEqual(manifest["selected_modules"]["data"], ["firebase"])
+            self.assertEqual(manifest["parameters"], {"JIRA_PROJECT_KEY": "ORD"})
+
+            # Newly added module artifacts staged cleanly
+            self.assertTrue((app_repo / "scripts" / "deploy.sh").is_file())
+            self.assertTrue((app_repo / "firebase.json").is_file())
+            self.assertTrue((app_repo / "docs" / "infrastructure_and_devops.md").is_file())
+            self.assertTrue((app_repo / ".agents" / "skills" / "cloud-gcp-cloudrun" / "SKILL.md").is_file())
+            self.assertTrue((app_repo / ".agents" / "skills" / "firebase-platform" / "SKILL.md").is_file())
+            self.assertTrue((app_repo / ".githooks" / "pre-commit.d" / "40-firestore-rules-check.sh").is_file())
+
+            # Existing module artifacts retained
+            self.assertTrue((app_repo / ".agents" / "skills" / "backend-python-fastapi" / "SKILL.md").is_file())
+            self.assertTrue((app_repo / ".agents" / "skills" / "tracker-jira" / "SKILL.md").is_file())
+            self.assertTrue((app_repo / ".githooks" / "pre-commit.d" / "30-python-check.sh").is_file())
+
+            ci_yml = (app_repo / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+            self.assertIn("backend-python:", ci_yml)
+            self.assertIn("firebase-rules:", ci_yml)
+            agents_md = (app_repo / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn("ORD", agents_md)
+            self.assertIn("Cloud Run", agents_md)
+
+            # Brownfield customizations preserved
+            self.assertEqual((app_repo / "README.md").read_text(encoding="utf-8"), "# Order API Custom README\n")
+            self.assertEqual((app_repo / "docs" / "architecture_decisions.md").read_text(encoding="utf-8"), "# Custom ADRs\n")
+            env_text = (app_repo / ".env.example").read_text(encoding="utf-8")
+            self.assertIn("CUSTOM_APP_TOKEN=abc123", env_text)
+            self.assertIn('FIREBASE_DATABASE_ID="custom-order-api-db"', env_text)
+            self.assertIn('SERVICE_NAME="custom-order-api"', env_text)
+
+    def test_reinit_switch_modules_prunes_stale_harness_preserving_user_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app_repo = (Path(tmp) / "switch-app").resolve()
+            app_repo.mkdir()
+            _git_init(app_repo)
+
+            subprocess.run(
+                [
+                    str(AGY_INIT),
+                    "--project-name",
+                    "Switch App",
+                    "--frontend",
+                    "react-vite-ts",
+                    "--backend",
+                    "python-fastapi",
+                    "--data",
+                    "firebase",
+                    "--cloud",
+                    "gcp-cloudrun",
+                    "--issue-tracker",
+                    "jira",
+                    "--jira-key",
+                    "SWI",
+                    "--git-hosting",
+                    "github",
+                    "--yes",
+                ],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            # Add unrelated user files inside directories managed by harness
+            (app_repo / ".github" / "CODEOWNERS").write_text("* @team\n", encoding="utf-8")
+            (app_repo / ".github" / "workflows" / "release.yml").write_text("name: Release\n", encoding="utf-8")
+            custom_skill = app_repo / ".agents" / "skills" / "custom-domain"
+            custom_skill.mkdir(parents=True)
+            (custom_skill / "SKILL.md").write_text("---\nname: custom-domain\ndescription: Custom.\n---\n", encoding="utf-8")
+            custom_hook = app_repo / ".githooks" / "pre-commit.d" / "99-custom.sh"
+            custom_hook.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            user_script = app_repo / "scripts" / "user_tool.sh"
+            user_script.write_text("#!/usr/bin/env bash\necho ok\n", encoding="utf-8")
+
+            # Switch stack completely (deselecting frontend, python, firebase, cloudrun, jira, github)
+            proc = subprocess.run(
+                [
+                    str(AGY_INIT),
+                    "--frontend",
+                    "none",
+                    "--backend",
+                    "node-express-ts",
+                    "--data",
+                    "none",
+                    "--cloud",
+                    "none",
+                    "--issue-tracker",
+                    "github-issues",
+                    "--git-hosting",
+                    "bitbucket",
+                    "--yes",
+                ],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+
+            # Stale skills, hooks, provider CI, and module files pruned
+            for stale in (
+                ".agents/skills/frontend-react-vite",
+                ".agents/skills/backend-python-fastapi",
+                ".agents/skills/firebase-platform",
+                ".agents/skills/firestore-security-auditor",
+                ".agents/skills/cloud-gcp-cloudrun",
+                ".agents/skills/tracker-jira",
+                ".agents/skills/git-github-pr",
+                ".agents/mcp_config.example.json",
+                ".githooks/pre-commit.d/20-frontend-check.sh",
+                ".githooks/pre-commit.d/30-python-check.sh",
+                ".githooks/pre-commit.d/40-firestore-rules-check.sh",
+                ".github/workflows/ci.yml",
+                ".github/pull_request_template.md",
+                ".github/dependabot.yml",
+                "scripts/deploy.sh",
+                "scripts/provision.sh",
+                "scripts/lib-firebase.sh",
+                ".gcloudignore",
+                "firebase.json",
+                "firestore.rules",
+                "firestore.indexes.json",
+            ):
+                self.assertFalse((app_repo / stale).exists(), f"{stale} should have been pruned")
+
+            # New modules staged
+            for expected in (
+                ".agents/skills/backend-node-express/SKILL.md",
+                ".agents/skills/tracker-github-issues/SKILL.md",
+                ".agents/skills/git-bitbucket-pr/SKILL.md",
+                ".githooks/pre-commit.d/30-node-check.sh",
+                ".githooks/commit-msg.json",
+                "bitbucket-pipelines.yml",
+                ".bitbucket/pull_request_template.md",
+            ):
+                self.assertTrue((app_repo / expected).exists(), f"{expected} should be present")
+
+            manifest = json.loads((app_repo / ".agy-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["parameters"], {})
+            self.assertNotIn("JIRA_PROJECT_KEY", (app_repo / "AGENTS.md").read_text(encoding="utf-8"))
+
+            # Unrelated user files untouched
+            self.assertEqual((app_repo / ".github" / "CODEOWNERS").read_text(encoding="utf-8"), "* @team\n")
+            self.assertEqual((app_repo / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8"), "name: Release\n")
+            self.assertTrue((custom_skill / "SKILL.md").is_file())
+            self.assertTrue(custom_hook.is_file())
+            self.assertTrue(user_script.is_file())
+
+            # Switching back to github without unrelated .bitbucket/ files removes empty .bitbucket/ dir cleanly
+            proc_back = subprocess.run(
+                [str(AGY_INIT), "--git-hosting", "github", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc_back.returncode, 0, msg=proc_back.stderr + proc_back.stdout)
+            self.assertFalse((app_repo / "bitbucket-pipelines.yml").exists())
+            self.assertFalse((app_repo / ".bitbucket").exists())
+            self.assertTrue((app_repo / ".github" / "workflows" / "ci.yml").is_file())
+
+    def test_resolve_init_inputs_and_interactive_prompt_with_existing_manifest(self) -> None:
+        catalog = agy_init.load_catalog()
+        parser = agy_init.build_arg_parser(catalog)
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / ".agy-manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "project_name": "Manifest App",
+                        "project_slug": "manifest-app",
+                        "selected_modules": {
+                            "frontend": [],
+                            "backend": ["python-fastapi"],
+                            "data": ["firebase"],
+                            "cloud": [],
+                            "issue-tracker": ["jira"],
+                            "git-hosting": ["github"],
+                        },
+                        "parameters": {"JIRA_PROJECT_KEY": "MAN"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            # Non-interactive CLI flag overrides cloud while preserving manifest defaults
+            args_yes = parser.parse_args(["--cloud", "gcp-cloudrun", "--yes"])
+            name, selections, params = agy_init._resolve_init_inputs(args_yes, catalog, "fallback", target_dir=repo)
+            self.assertEqual(name, "Manifest App")
+            self.assertEqual(selections["backend"], ["python-fastapi"])
+            self.assertEqual(selections["data"], ["firebase"])
+            self.assertEqual(selections["cloud"], ["gcp-cloudrun"])
+            self.assertEqual(params, {"JIRA_PROJECT_KEY": "MAN"})
+
+            # Switching jira -> github-issues drops stale manifest JIRA_PROJECT_KEY
+            args_no_jira = parser.parse_args(["--issue-tracker", "github-issues", "--yes"])
+            _, sel_no_jira, params_no_jira = agy_init._resolve_init_inputs(
+                args_no_jira, catalog, "fallback", target_dir=repo
+            )
+            self.assertEqual(sel_no_jira["issue-tracker"], ["github-issues"])
+            self.assertEqual(params_no_jira, {})
+
+            # Interactive prompt via _resolve_init_inputs pre-populates manifest defaults and lets user override/keep
+            args_interactive = parser.parse_args(["--cloud", "gcp-cloudrun"])
+            # Prompts: project_name, frontend, backend, data, issue-tracker, git-hosting, JIRA_PROJECT_KEY
+            answers = iter(["", "", "", "", "", "bitbucket", "NEWKEY"])
+            seen_prompts: list[str] = []
+
+            def fake_input(prompt: str = "") -> str:
+                seen_prompts.append(prompt)
+                return next(answers)
+
+            with (
+                contextlib.redirect_stdout(io.StringIO()),
+                mock.patch("sys.stdin.isatty", return_value=True),
+                mock.patch("builtins.input", side_effect=fake_input),
+            ):
+                i_name, i_sel, i_params = agy_init._resolve_init_inputs(
+                    args_interactive, catalog, "fallback", target_dir=repo
+                )
+            self.assertEqual(i_name, "Manifest App")
+            self.assertEqual(i_sel["frontend"], [])
+            self.assertEqual(i_sel["backend"], ["python-fastapi"])
+            self.assertEqual(i_sel["data"], ["firebase"])
+            self.assertEqual(i_sel["cloud"], ["gcp-cloudrun"])
+            self.assertEqual(i_sel["issue-tracker"], ["jira"])
+            self.assertEqual(i_sel["git-hosting"], ["bitbucket"])
+            self.assertEqual(i_params, {"JIRA_PROJECT_KEY": "NEWKEY"})
+            self.assertIn("Project name [Manifest App]: ", seen_prompts)
+            self.assertIn("Select option [python-fastapi]: ", seen_prompts)
+            self.assertIn("Select comma-separated numbers or IDs [firebase]: ", seen_prompts)
+            self.assertTrue(any("[MAN]" in p for p in seen_prompts))
+
+            # Direct interactive_prompt call detects .agy-manifest.json, keeps multi-select default on Enter,
+            # and allows interactive deselection via 'none'
+            direct_answers = iter(["", "", "", "", "", "", "", ""])
+            with (
+                contextlib.redirect_stdout(io.StringIO()),
+                mock.patch("builtins.input", side_effect=lambda _prompt="": next(direct_answers)),
+            ):
+                d_name, d_sel, d_params = agy_init.interactive_prompt(catalog, repo.name, {}, {}, target_dir=repo)
+            self.assertEqual(d_name, "Manifest App")
+            self.assertEqual(d_sel["data"], ["firebase"])
+            self.assertEqual(d_params, {"JIRA_PROJECT_KEY": "MAN"})
+
+            deselect_answers = iter(["", "", "", "none", "", "", "", ""])
+            with (
+                contextlib.redirect_stdout(io.StringIO()),
+                mock.patch("builtins.input", side_effect=lambda _prompt="": next(deselect_answers)),
+            ):
+                _, d_sel2, _ = agy_init.interactive_prompt(catalog, repo.name, {}, {}, target_dir=repo)
+            self.assertEqual(d_sel2["data"], [])
+
+    def test_dry_run_reports_brownfield_and_stale_prune_without_modifying_disk(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app_repo = (Path(tmp) / "dry-brownfield").resolve()
+            app_repo.mkdir()
+            _git_init(app_repo)
+
+            subprocess.run(
+                [str(AGY_INIT), "--backend", "python-fastapi", "--git-hosting", "github", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            (app_repo / "README.md").write_text("# Keep Me\n", encoding="utf-8")
+            (app_repo / ".gitignore").write_text("my-cache/\n", encoding="utf-8")
+            existing_env = (app_repo / ".env.example").read_text(encoding="utf-8")
+            self.assertIn("APP_ENV=development", existing_env)
+
+            dry = subprocess.run(
+                [str(AGY_INIT), "--git-hosting", "bitbucket", "--dry-run"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(dry.returncode, 0, msg=dry.stderr + dry.stdout)
+            summary = json.loads(dry.stdout)
+            self.assertIn("README.md", summary["preserved_files"])
+            self.assertIn("docs/README.md", summary["preserved_files"])
+            self.assertIn(".env.example", summary["preserved_files"])
+            self.assertIn(".gitignore", summary["merged_files"])
+            self.assertIn(".github/workflows/ci.yml", summary["stale_files_to_prune"])
+            self.assertIn(".agents/skills/git-github-pr", summary["stale_files_to_prune"])
+
+            # Verify disk was not modified
+            self.assertEqual((app_repo / "README.md").read_text(encoding="utf-8"), "# Keep Me\n")
+            self.assertEqual((app_repo / ".gitignore").read_text(encoding="utf-8"), "my-cache/\n")
+            self.assertTrue((app_repo / ".github" / "workflows" / "ci.yml").is_file())
+            self.assertFalse((app_repo / "bitbucket-pipelines.yml").exists())
+
+    def test_invalid_existing_manifest_exits_cleanly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app_repo = (Path(tmp) / "broken-manifest").resolve()
+            app_repo.mkdir()
+            (app_repo / ".agy-manifest.json").write_text("{broken json", encoding="utf-8")
+
+            proc = subprocess.run(
+                [str(AGY_INIT), "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("Error:", proc.stderr)
+            self.assertNotIn("Traceback", proc.stderr)
+
+    def test_github_ci_includes_setup_go_for_go_service(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "go-github-ci"
+            proc = subprocess.run(
+                [
+                    str(AGY_INIT),
+                    "--project-name",
+                    "Go CI Service",
+                    "--frontend",
+                    "none",
+                    "--backend",
+                    "go-service",
+                    "--data",
+                    "none",
+                    "--cloud",
+                    "none",
+                    "--issue-tracker",
+                    "github-issues",
+                    "--git-hosting",
+                    "github",
+                    "--output-dir",
+                    str(out_dir),
+                    "--yes",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+
+            ci_yml = (out_dir / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+            self.assertIn("backend-go:", ci_yml)
+            self.assertIn("Set up Go 1.23", ci_yml)
+            self.assertIn("uses: actions/setup-go@v5", ci_yml)
+            self.assertIn('go-version: "1.23"', ci_yml)
+            self.assertLess(ci_yml.index("uses: actions/setup-go@v5"), ci_yml.index("go vet ./..."))
+            self.assertIn('if [ -f "go.mod" ]; then', ci_yml)
+
+        render_fn = agy_init.load_renderer(REPO_ROOT / "modules" / "git-hosting" / "github" / "render.py")
+        rendered = render_fn(
+            {
+                "ci_jobs": [
+                    {
+                        "id": "custom-go",
+                        "name": "Custom Go",
+                        "runtimes": {"go": "1.22"},
+                        "guard_files": ["go.mod"],
+                        "steps": [{"name": "Test", "run": "go test ./..."}],
+                    }
+                ]
+            }
+        )
+        custom_ci = rendered[".github/workflows/ci.yml"]
+        self.assertIn("Set up Go 1.22", custom_ci)
+        self.assertIn("uses: actions/setup-go@v5", custom_ci)
+        self.assertIn('go-version: "1.22"', custom_ci)
+
+    def test_inplace_init_prunes_stale_gitlab_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _copy_template_repo(Path(tmp))
+            _git_init(repo)
+
+            (repo / ".gitlab" / "merge_request_templates").mkdir(parents=True)
+            (repo / ".gitlab" / "merge_request_templates" / "Default.md").write_text("stale mr\n", encoding="utf-8")
+            (repo / ".gitlab-ci.yml").write_text("stages: [test]\n", encoding="utf-8")
+
+            proc = subprocess.run(
+                [
+                    str(repo / "agy-init"),
+                    "--project-name",
+                    "Prune GitLab Inplace",
+                    "--frontend",
+                    "none",
+                    "--backend",
+                    "go-service",
+                    "--data",
+                    "none",
+                    "--cloud",
+                    "none",
+                    "--issue-tracker",
+                    "github-issues",
+                    "--git-hosting",
+                    "github",
+                    "--yes",
+                ],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+            self.assertFalse((repo / ".gitlab-ci.yml").exists())
+            self.assertFalse((repo / ".gitlab").exists())
+            self.assertFalse((repo / ".agents" / "skills" / "git-gitlab-mr").exists())
+            self.assertTrue((repo / ".github" / "workflows" / "ci.yml").is_file())
+            self.assertIn("actions/setup-go@v5", (repo / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+
+            # Verify --keep-template-engine also prunes .gitlab and .gitlab-ci.yml when switching away from gitlab
+            kept_repo = _copy_template_repo(Path(tmp) / "kept")
+            _git_init(kept_repo)
+            first = subprocess.run(
+                [
+                    str(kept_repo / "agy-init"),
+                    "--project-name",
+                    "Kept Engine",
+                    "--backend",
+                    "go-service",
+                    "--git-hosting",
+                    "gitlab",
+                    "--keep-template-engine",
+                    "--yes",
+                ],
+                cwd=kept_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(first.returncode, 0, msg=first.stderr + first.stdout)
+            self.assertTrue((kept_repo / ".gitlab-ci.yml").is_file())
+            self.assertTrue((kept_repo / ".gitlab" / "merge_request_templates" / "Default.md").is_file())
+
+            second = subprocess.run(
+                [str(kept_repo / "agy-init"), "--git-hosting", "bitbucket", "--keep-template-engine", "--yes"],
+                cwd=kept_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(second.returncode, 0, msg=second.stderr + second.stdout)
+            self.assertFalse((kept_repo / ".gitlab-ci.yml").exists())
+            self.assertFalse((kept_repo / ".gitlab").exists())
+            self.assertFalse((kept_repo / ".agents" / "skills" / "git-gitlab-mr").exists())
+            self.assertTrue((kept_repo / "bitbucket-pipelines.yml").is_file())
+
+    def test_reinit_switch_away_from_gitlab_prunes_stale_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app_repo = (Path(tmp) / "gitlab-switch-app").resolve()
+            app_repo.mkdir()
+            _git_init(app_repo)
+
+            first = subprocess.run(
+                [
+                    str(AGY_INIT),
+                    "--project-name",
+                    "GitLab Switch App",
+                    "--frontend",
+                    "none",
+                    "--backend",
+                    "go-service",
+                    "--data",
+                    "none",
+                    "--cloud",
+                    "none",
+                    "--issue-tracker",
+                    "linear",
+                    "--param",
+                    "LINEAR_TEAM_KEY=ENG",
+                    "--git-hosting",
+                    "gitlab",
+                    "--yes",
+                ],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(first.returncode, 0, msg=first.stderr + first.stdout)
+            self.assertTrue((app_repo / ".gitlab-ci.yml").is_file())
+            self.assertTrue((app_repo / ".gitlab" / "merge_request_templates" / "Default.md").is_file())
+            self.assertTrue((app_repo / ".agents" / "skills" / "git-gitlab-mr" / "SKILL.md").is_file())
+
+            # Dry-run reports GitLab artifacts as stale without touching disk
+            dry = subprocess.run(
+                [str(AGY_INIT), "--git-hosting", "github", "--dry-run"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(dry.returncode, 0, msg=dry.stderr + dry.stdout)
+            summary = json.loads(dry.stdout)
+            self.assertIn(".gitlab-ci.yml", summary["stale_files_to_prune"])
+            self.assertIn(".gitlab/merge_request_templates/Default.md", summary["stale_files_to_prune"])
+            self.assertIn(".agents/skills/git-gitlab-mr", summary["stale_files_to_prune"])
+            self.assertTrue((app_repo / ".gitlab-ci.yml").is_file())
+
+            # Switching gitlab -> github removes GitLab CI/MR files and empty .gitlab directory cleanly
+            to_github = subprocess.run(
+                [str(AGY_INIT), "--git-hosting", "github", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(to_github.returncode, 0, msg=to_github.stderr + to_github.stdout)
+            self.assertFalse((app_repo / ".gitlab-ci.yml").exists())
+            self.assertFalse((app_repo / ".gitlab").exists())
+            self.assertFalse((app_repo / ".agents" / "skills" / "git-gitlab-mr").exists())
+            self.assertTrue((app_repo / ".agents" / "skills" / "git-github-pr" / "SKILL.md").is_file())
+            self.assertIn("actions/setup-go@v5", (app_repo / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+
+            manifest = json.loads((app_repo / ".agy-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["selected_modules"]["git-hosting"], ["github"])
+            self.assertEqual(manifest["selected_modules"]["backend"], ["go-service"])
+            self.assertEqual(manifest["parameters"], {"LINEAR_TEAM_KEY": "ENG"})
+
+            # Switching github -> gitlab, adding user file under .gitlab/, then switching -> bitbucket preserves user file
+            to_gitlab = subprocess.run(
+                [str(AGY_INIT), "--git-hosting", "gitlab", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(to_gitlab.returncode, 0, msg=to_gitlab.stderr + to_gitlab.stdout)
+            (app_repo / ".gitlab" / "CODEOWNERS").write_text("* @backend-team\n", encoding="utf-8")
+
+            to_bitbucket = subprocess.run(
+                [str(AGY_INIT), "--git-hosting", "bitbucket", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(to_bitbucket.returncode, 0, msg=to_bitbucket.stderr + to_bitbucket.stdout)
+            self.assertFalse((app_repo / ".gitlab-ci.yml").exists())
+            self.assertFalse((app_repo / ".gitlab" / "merge_request_templates").exists())
+            self.assertEqual((app_repo / ".gitlab" / "CODEOWNERS").read_text(encoding="utf-8"), "* @backend-team\n")
+            self.assertTrue((app_repo / "bitbucket-pipelines.yml").is_file())
+
+    def test_active_skills_path_traversal_and_symlinks_blocked_in_pruning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app_repo = (Path(tmp) / "traversal-app").resolve()
+            app_repo.mkdir()
+            _git_init(app_repo)
+
+            subprocess.run(
+                [str(AGY_INIT), "--backend", "python-fastapi", "--git-hosting", "github", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            # Direct unit contract: _resolve_lexical_subpath and prune_stale_harness_files block escapes and root targets
+            for bad_dir in (Path("../../src"), Path("../.."), Path("."), Path(".agents/skills"), Path(".agents/skills/.")):
+                with self.assertRaises(agy_init.InitError):
+                    agy_init.prune_stale_harness_files(app_repo, [], [bad_dir])
+
+            # Malicious active_skills in manifest must not touch src/ or custom skills
+            (app_repo / "src").mkdir()
+            (app_repo / "src" / "app.py").write_text("print('keep')\n", encoding="utf-8")
+            custom_skill = app_repo / ".agents" / "skills" / "custom-user"
+            custom_skill.mkdir(parents=True)
+            (custom_skill / "SKILL.md").write_text("---\nname: custom-user\ndescription: Custom.\n---\n", encoding="utf-8")
+
+            manifest_path = app_repo / ".agy-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["active_skills"].extend(["../../src", "../..", ".", "../other"])
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            proc = subprocess.run(
+                [str(AGY_INIT), "--backend", "none", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+            self.assertTrue((app_repo / "src" / "app.py").is_file())
+            self.assertTrue((custom_skill / "SKILL.md").is_file())
+
+            # Symlinks in stale skill dirs or stale files must unlink the symlink, never the target
+            user_docs = app_repo / "user-docs"
+            user_docs.mkdir()
+            (user_docs / "doc.txt").write_text("important\n", encoding="utf-8")
+            real_deploy = app_repo / "real_deploy.sh"
+            real_deploy.write_text("#!/bin/sh\necho keep\n", encoding="utf-8")
+
+            subprocess.run(
+                [str(AGY_INIT), "--backend", "python-fastapi", "--cloud", "gcp-cloudrun", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            stale_skill_dir = app_repo / ".agents" / "skills" / "backend-python-fastapi"
+            shutil.rmtree(stale_skill_dir)
+            stale_skill_dir.symlink_to(Path("../..") / "user-docs")
+
+            stale_deploy = app_repo / "scripts" / "deploy.sh"
+            stale_deploy.unlink()
+            stale_deploy.symlink_to(Path("..") / "real_deploy.sh")
+
+            dry = subprocess.run(
+                [str(AGY_INIT), "--backend", "none", "--cloud", "none", "--dry-run"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(dry.returncode, 0, msg=dry.stderr + dry.stdout)
+            dry_summary = json.loads(dry.stdout)
+            self.assertIn(".agents/skills/backend-python-fastapi", dry_summary["stale_files_to_prune"])
+            self.assertIn("scripts/deploy.sh", dry_summary["stale_files_to_prune"])
+
+            reinit = subprocess.run(
+                [str(AGY_INIT), "--backend", "none", "--cloud", "none", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(reinit.returncode, 0, msg=reinit.stderr + reinit.stdout)
+            self.assertFalse(stale_skill_dir.is_symlink())
+            self.assertFalse(stale_deploy.is_symlink())
+            self.assertEqual((user_docs / "doc.txt").read_text(encoding="utf-8"), "important\n")
+            self.assertEqual(real_deploy.read_text(encoding="utf-8"), "#!/bin/sh\necho keep\n")
+
+            # Symlink ancestor blocks both --dry-run and real execution identically
+            outside_dir = Path(tmp) / "outside-dir"
+            outside_dir.mkdir()
+            subprocess.run(
+                [str(AGY_INIT), "--cloud", "gcp-cloudrun", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            shutil.rmtree(app_repo / "scripts")
+            (app_repo / "scripts").symlink_to(outside_dir)
+
+            dry_sym = subprocess.run(
+                [str(AGY_INIT), "--cloud", "none", "--dry-run"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            real_sym = subprocess.run(
+                [str(AGY_INIT), "--cloud", "none", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(dry_sym.returncode, 0)
+            self.assertNotEqual(real_sym.returncode, 0)
+            self.assertIn("Error:", dry_sym.stderr)
+            self.assertIn("Error:", real_sym.stderr)
+
+    def test_corrupt_manifest_field_types_exit_cleanly(self) -> None:
+        bad_manifests = [
+            {"selected_modules": ["python-fastapi"]},
+            {"parameters": ["bad"]},
+            {"active_skills": 123},
+            {"active_skills": "backend-python-fastapi"},
+            {"project_name": 42},
+        ]
+        for idx, payload in enumerate(bad_manifests):
+            with self.subTest(case=idx), tempfile.TemporaryDirectory() as tmp:
+                app_repo = (Path(tmp) / "bad-types").resolve()
+                app_repo.mkdir()
+                (app_repo / ".agy-manifest.json").write_text(json.dumps(payload), encoding="utf-8")
+
+                proc = subprocess.run(
+                    [str(AGY_INIT), "--yes"],
+                    cwd=app_repo,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("Error:", proc.stderr)
+                self.assertNotIn("Traceback", proc.stderr)
+
+    def test_unknown_or_removed_modules_in_old_manifest_handled_gracefully(self) -> None:
+        catalog = agy_init.load_catalog()
+        parser = agy_init.build_arg_parser(catalog)
+        with tempfile.TemporaryDirectory() as tmp:
+            app_repo = (Path(tmp) / "old-manifest").resolve()
+            app_repo.mkdir()
+            (app_repo / ".agy-manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "project_name": "Legacy App",
+                        "selected_modules": {
+                            "frontend": ["removed-ui"],
+                            "backend": ["python-fastapi", "node-express-ts"],
+                            "issue-tracker": ["github-issues"],
+                            "git-hosting": ["removed-git"],
+                            "obsolete-cat": ["anything"],
+                        },
+                        "parameters": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            proc = subprocess.run(
+                [str(AGY_INIT), "--cloud", "gcp-cloudrun", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+            self.assertIn("Warning:", proc.stderr)
+            manifest = json.loads((app_repo / ".agy-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["selected_modules"]["frontend"], [])
+            self.assertEqual(manifest["selected_modules"]["backend"], ["python-fastapi"])
+            self.assertEqual(manifest["selected_modules"]["cloud"], ["gcp-cloudrun"])
+            self.assertEqual(manifest["selected_modules"]["git-hosting"], ["github"])
+
+            # Interactive mode with single-select manifest having 2 valid IDs returns only [0] on Enter
+            args_interactive = parser.parse_args([])
+            answers = iter(["", "", "", "", "", "", ""])
+            with (
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(io.StringIO()),
+                mock.patch("sys.stdin.isatty", return_value=True),
+                mock.patch("builtins.input", side_effect=lambda _prompt="": next(answers)),
+            ):
+                _, i_sel, _ = agy_init._resolve_init_inputs(args_interactive, catalog, "fallback", target_dir=app_repo)
+            self.assertEqual(i_sel["backend"], ["python-fastapi"])
+
+    def test_cli_single_category_deselect_duplicate_multiselect_and_output_dir_reinit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = (Path(tmp) / "out-reinit").resolve()
+            out_dir.mkdir()
+            (out_dir / "README.md").write_text("# Existing Project\n", encoding="utf-8")
+
+            first = subprocess.run(
+                [
+                    str(AGY_INIT),
+                    "--project-name",
+                    "Out App",
+                    "--backend",
+                    "python-fastapi",
+                    "--data",
+                    "firebase,firebase",
+                    "--cloud",
+                    "gcp-cloudrun",
+                    "--output-dir",
+                    str(out_dir),
+                    "--yes",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(first.returncode, 0, msg=first.stderr + first.stdout)
+            manifest1 = json.loads((out_dir / ".agy-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest1["selected_modules"]["data"], ["firebase"])
+            rule_ids = [r["id"] for r in agy_init.load_json(out_dir / ".agents" / "hooks" / "guard_rules.json")["command_rules"]]
+            self.assertEqual(len(rule_ids), len(set(rule_ids)))
+
+            # Re-init via --output-dir deselecting only cloud preserves backend and data
+            second = subprocess.run(
+                [str(AGY_INIT), "--cloud", "none", "--output-dir", str(out_dir), "--yes"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(second.returncode, 0, msg=second.stderr + second.stdout)
+            manifest2 = json.loads((out_dir / ".agy-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest2["selected_modules"]["backend"], ["python-fastapi"])
+            self.assertEqual(manifest2["selected_modules"]["data"], ["firebase"])
+            self.assertEqual(manifest2["selected_modules"]["cloud"], [])
+            self.assertFalse((out_dir / "scripts" / "deploy.sh").exists())
+            self.assertEqual((out_dir / "README.md").read_text(encoding="utf-8"), "# Existing Project\n")
 
 
 if __name__ == "__main__":

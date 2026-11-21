@@ -1,0 +1,16 @@
+{
+  "command_rules": [
+    {
+      "id": "confirm-supabase-db-push",
+      "pattern": "(?:^|[;&|\\n])\\s*(?:[A-Z_][A-Z0-9_]*=[^\\s;&|\\n]+\\s+){0,5}(?:(?:npx(?:\\s+(?:-y|--yes))?|pnpm\\s+dlx|bunx)\\s+)?supabase\\s+(?:(?:--[a-z0-9-]+(?:=[^\\s;&|\\n]+|\\s+[^\\s;&|\\n-][^\\s;&|\\n]*)|-[a-zA-Z])\\s+){0,4}db\\s+push\\b(?![^;&|\\n]*--dry-run\\b)",
+      "decision": "force_ask",
+      "reason": "Pushing migrations to a remote/linked Supabase database detected. Preview with --dry-run first and obtain explicit human confirmation."
+    },
+    {
+      "id": "confirm-supabase-destructive-remote",
+      "pattern": "(?:^|[;&|\\n])\\s*(?:[A-Z_][A-Z0-9_]*=[^\\s;&|\\n]+\\s+){0,5}(?:(?:npx(?:\\s+(?:-y|--yes))?|pnpm\\s+dlx|bunx)\\s+)?supabase\\s+(?:(?:--[a-z0-9-]+(?:=[^\\s;&|\\n]+|\\s+[^\\s;&|\\n-][^\\s;&|\\n]*)|-[a-zA-Z])\\s+){0,4}(?:projects\\s+delete|functions\\s+delete|secrets\\s+unset|migration\\s+repair|db\\s+reset\\b[^;&|\\n]*(?:--linked|--db-url))\\b",
+      "decision": "force_ask",
+      "reason": "Destructive remote/linked Supabase operation detected (project/function delete, secrets unset, migration repair, or linked db reset). Explicit human confirmation is required."
+    }
+  ]
+}
