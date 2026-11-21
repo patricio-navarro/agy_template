@@ -28,7 +28,7 @@ description: >-
 
 ## 4. Columnar Engine Workloads
 
-- **Targeted Analytical Acceleration:** Enable and populate the AlloyDB columnar engine selectively for large analytical tables/columns (`google_columnar_engine.add(...)` or auto-columnarization) instead of adding excessive OLTP B-tree composite indexes that slow down writes.
+- **Targeted Analytical Acceleration:** Enable and populate the AlloyDB columnar engine selectively for large analytical tables/columns (`google_columnar_engine_add(...)` dynamically or `google_columnar_engine.relations` persistently / auto-columnarization) instead of adding excessive OLTP B-tree composite indexes that slow down writes.
 - **Plan & Memory Verification:** Confirm analytical queries actually use `Columnar Scan` via `EXPLAIN (ANALYZE, BUFFERS)` and size `google_columnar_engine.memory_size_in_mb` within instance RAM budgets.
 
 ## 5. Production Guardrails & Concurrency Lock

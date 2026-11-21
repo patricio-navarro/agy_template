@@ -32,6 +32,6 @@ description: >-
 
 ## 4. Connection Pooling & Docker / Cloud SQL Parity
 
-- **Bounded Connection Pools:** Configure explicit `DB_POOL_MIN`, `DB_POOL_MAX`, acquire timeouts, idle timeouts, and `statement_timeout` per service instance so total replicas never exhaust `max_connections` (or use PgBouncer / Cloud SQL Proxy pooling).
+- **Bounded Connection Pools:** Configure explicit `DB_POOL_MIN`, `DB_POOL_MAX`, acquire timeouts, idle timeouts, and `statement_timeout` per service instance so total replicas never exhaust `max_connections` (or use PgBouncer / Cloud SQL Managed Connection Pooling).
 - **Environment Parity:** Pin the same PostgreSQL major version and extensions in local Docker Compose (`postgres:<major>`) as in Cloud SQL / production. Keep TLS settings (`sslmode=require`/`verify-full` in cloud, `disable` only for local Docker/Unix sockets) driven by `DATABASE_URL` and `.env`, never hardcoded.
 - **Concurrency Lock:** Only **one** subagent at a time may run migrations, container resets, or stateful DB integration tests against a shared local PostgreSQL container or port `5432`.

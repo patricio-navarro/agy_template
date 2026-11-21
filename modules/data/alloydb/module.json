@@ -5,7 +5,7 @@
   "description": "Google Cloud AlloyDB for PostgreSQL with Auth Proxy / language connectors, IAM database auth, connection pooling, pgvector, and columnar engine conventions.",
   "verification_commands": [
     "pg_isready -h \"${ALLOYDB_PROXY_HOST:-127.0.0.1}\" -p \"${ALLOYDB_PROXY_PORT:-5432}\"  # verify AlloyDB Auth Proxy or local PostgreSQL test listener readiness",
-    "psql \"${DATABASE_URL:-postgresql://127.0.0.1:5432/{{PROJECT_SLUG}}}\" -v ON_ERROR_STOP=1 -c \"SELECT 1;\"  # verify AlloyDB/PostgreSQL connectivity and migration baseline"
+    "psql \"${ALLOYDB_DATABASE_URL:-${DATABASE_URL:-postgresql://127.0.0.1:5432/{{PROJECT_SLUG}}}}\" -v ON_ERROR_STOP=1 -c \"SELECT 1;\"  # verify AlloyDB/PostgreSQL connectivity and migration baseline"
   ],
   "evaluators": [
     {
@@ -29,6 +29,6 @@
     "ALLOYDB_USER=\"\"",
     "ALLOYDB_DB=\"{{PROJECT_SLUG}}\"",
     "ALLOYDB_USE_IAM_AUTH=\"true\"",
-    "DATABASE_URL=\"postgresql://127.0.0.1:5432/{{PROJECT_SLUG}}\""
+    "ALLOYDB_DATABASE_URL=\"postgresql://127.0.0.1:5432/{{PROJECT_SLUG}}\""
   ]
 }

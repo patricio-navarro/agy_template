@@ -5,15 +5,50 @@ from __future__ import annotations
 from typing import Any
 
 
+_PREDEFINED_CACHES = frozenset({
+    "composer",
+    "dotnetcore",
+    "gradle",
+    "ivy2",
+    "maven",
+    "node",
+    "pip",
+    "sbt",
+    "docker",
+})
+_CACHE_ALIASES: dict[str, str] = {"npm": "node"}
+_CUSTOM_CACHES: dict[str, tuple[str, str]] = {
+    "gomod": ("gomod", "/go/pkg/mod"),
+    "go": ("gomod", "/go/pkg/mod"),
+}
+
+
 def _yaml_quote(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
 
-def _render_step_block(job: dict[str, Any], indent: str) -> list[str]:
+def _resolve_step_caches(raw_caches: list[str], custom_defs: dict[str, str]) -> list[str]:
+    """Map logical module cache names to Bitbucket predefined or custom caches."""
+    resolved: list[str] = []
+    for raw in raw_caches:
+        mapped = _CACHE_ALIASES.get(raw, raw)
+        if mapped in _PREDEFINED_CACHES:
+            name = mapped
+        elif raw in _CUSTOM_CACHES:
+            name, cache_dir = _CUSTOM_CACHES[raw]
+            custom_defs[name] = cache_dir
+        else:
+            continue
+        if name not in resolved:
+            resolved.append(name)
+    return resolved
+
+
+def _render_step_block(job: dict[str, Any], indent: str, custom_defs: dict[str, str]) -> list[str]:
     job_name = job["name"]
     docker_image = job.get("docker_image") or "ubuntu:24.04"
-    caches = job.get("caches") or []
+    caches = _resolve_step_caches(job.get("caches") or [], custom_defs)
     guard_files = job.get("guard_files") or []
     runtimes = job.get("runtimes") or {}
     steps = job.get("steps") or []
@@ -59,6 +94,7 @@ def _render_step_block(job: dict[str, Any], indent: str) -> list[str]:
 
 
 def _render_pipelines_yml(ci_jobs: list[dict[str, Any]]) -> str:
+    custom_defs: dict[str, str] = {}
     if not ci_jobs:
         pipeline_body = [
             "    - step:",
@@ -72,13 +108,20 @@ def _render_pipelines_yml(ci_jobs: list[dict[str, Any]]) -> str:
             "            fi",
         ]
     elif len(ci_jobs) == 1:
-        pipeline_body = _render_step_block(ci_jobs[0], "    ")
+        pipeline_body = _render_step_block(ci_jobs[0], "    ", custom_defs)
     else:
         pipeline_body = ["    - parallel:"]
         for job in ci_jobs:
-            pipeline_body.extend(_render_step_block(job, "        "))
+            pipeline_body.extend(_render_step_block(job, "        ", custom_defs))
 
-    lines = [
+    lines: list[str] = []
+    if custom_defs:
+        lines.extend(["definitions:", "  caches:"])
+        for name, cache_dir in custom_defs.items():
+            lines.append(f"    {name}: {cache_dir}")
+        lines.append("")
+
+    lines.extend([
         "pipelines:",
         "  default:",
         *pipeline_body,
@@ -88,7 +131,7 @@ def _render_pipelines_yml(ci_jobs: list[dict[str, Any]]) -> str:
         "  pull-requests:",
         "    '**':",
         *pipeline_body,
-    ]
+    ])
     return "\n".join(lines) + "\n"
 
 

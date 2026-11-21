@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from typing import Any
 
 _CACHE_MAP: dict[str, tuple[tuple[str, str], str]] = {
@@ -70,10 +71,13 @@ def _render_script_block(job: dict[str, Any], docker_image: str) -> list[str]:
 
     body_commands: list[str] = []
     if "node" in runtimes and "java" in runtimes and "node" not in docker_image:
+        node_major = str(runtimes["node"]).split(".", 1)[0]
+        if not node_major.isdigit():
+            node_major = "22"
         body_commands.append(
             "if ! command -v node >/dev/null 2>&1; then "
             "apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && "
-            "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && "
+            f"curl -fsSL https://deb.nodesource.com/setup_{node_major}.x | bash - && "
             "apt-get install -y --no-install-recommends nodejs; "
             "fi"
         )
@@ -86,8 +90,8 @@ def _render_script_block(job: dict[str, Any], docker_image: str) -> list[str]:
 
     lines = ["  script:"]
     if guard_files:
-        guard_cond = " || ".join(f'[ -f "{path}" ]' for path in guard_files)
-        skip_msg = _yaml_quote(
+        guard_cond = " || ".join(f"[ -f {shlex.quote(path)} ]" for path in guard_files)
+        skip_msg = shlex.quote(
             f"No manifest found yet ({', '.join(guard_files)}); skipping step on Day-0 harness."
         )
         lines.append("    - |")

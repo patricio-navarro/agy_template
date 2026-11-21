@@ -2,7 +2,7 @@
   "command_rules": [
     {
       "id": "confirm-glab-mr-merge-or-repo-delete",
-      "pattern": "(?:^|[;&|]\\s*)(?:glab\\s+(?:mr\\s+(?:merge|accept)|repo\\s+delete)\\b|glab\\s+api\\b[^;&|\\n]*\\/merge_requests\\/[^\\s;|&]+\\/merge\\b|curl\\b[^;&|\\n]*\\/merge_requests\\/[^\\s;|&]+\\/merge\\b)",
+      "pattern": "(?:^|[;&|\\n])\\s*(?:[A-Z_][A-Z0-9_]*=[^\\s;&|\\n]+\\s+){0,5}(?:glab\\s+(?:mr\\s+(?:(?:-R|--repo)(?:=|\\s+)\\S+\\s+)?(?:merge|accept)|(?:repo|project)\\s+delete)\\b|(?:glab\\s+api|curl)\\b[^;&|\\n]*\\/merge_requests\\/[^\\s;|&]+\\/merge\\b)",
       "decision": "force_ask",
       "reason": "Merging a GitLab Merge Request or deleting a GitLab repository requires explicit human confirmation."
     }

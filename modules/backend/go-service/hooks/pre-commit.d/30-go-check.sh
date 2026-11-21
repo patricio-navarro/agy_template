@@ -10,7 +10,8 @@ if command -v gofmt >/dev/null 2>&1; then
   UNFORMATTED=""
   while IFS= read -r file; do
     [[ -f "$file" ]] || continue
-    if [[ -n "$(gofmt -l "$file")" ]]; then
+    fmt_out="$(gofmt -l "$file")"
+    if [[ -n "$fmt_out" ]]; then
       UNFORMATTED+="$file"$'\n'
     fi
   done <<< "$STAGED_GO"

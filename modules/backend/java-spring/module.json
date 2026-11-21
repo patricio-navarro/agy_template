@@ -55,7 +55,7 @@
       "steps": [
         {
           "name": "Build and run Spring Boot tests",
-          "run": "if [ -f pom.xml ]; then if [ -x ./mvnw ]; then ./mvnw -B test; elif [ -f mvnw ]; then chmod +x mvnw && ./mvnw -B test; elif command -v mvn >/dev/null 2>&1; then mvn -B test; else echo 'No ./mvnw or mvn found; skipping Maven test'; fi; elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then if [ -x ./gradlew ]; then ./gradlew test --no-daemon; elif [ -f gradlew ]; then chmod +x gradlew && ./gradlew test --no-daemon; elif command -v gradle >/dev/null 2>&1; then gradle test --no-daemon; else echo 'No ./gradlew or gradle found; skipping Gradle test'; fi; fi"
+          "run": "if [ -f pom.xml ]; then if [ -x ./mvnw ]; then ./mvnw -B test; elif [ -f mvnw ]; then chmod +x mvnw && ./mvnw -B test; elif command -v mvn >/dev/null 2>&1; then mvn -B test; else echo 'Error: pom.xml found but neither ./mvnw nor mvn is available.' >&2; exit 1; fi; elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then if [ -x ./gradlew ]; then ./gradlew test --no-daemon; elif [ -f gradlew ]; then chmod +x gradlew && ./gradlew test --no-daemon; elif command -v gradle >/dev/null 2>&1; then gradle test --no-daemon; else echo 'Error: Gradle build file found but neither ./gradlew nor gradle is available.' >&2; exit 1; fi; fi"
         }
       ]
     }

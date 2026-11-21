@@ -11,10 +11,10 @@ description: >-
 
 ## 1. App Router & Server/Client (RSC) Boundaries
 
-- **Server Components by Default:** Keep `app/**/page.tsx`, `layout.tsx`, `loading.tsx`, `error.tsx`, and data-fetching components as React Server Components. Push `'use client'` down to the smallest interactive leaf components that require browser APIs, event handlers, or React state hooks.
+- **Server Components by Default:** Keep `app/**/page.tsx`, `layout.tsx`, `loading.tsx`, `not-found.tsx`, and data-fetching components as React Server Components. Push `'use client'` down to the smallest interactive leaf components that require browser APIs, event handlers, or React state hooks.
 - **Strict Secret Isolation:** Never import server-only modules, database clients, or private environment variables into `'use client'` modules. Mark server utilities with `import 'server-only'` and pass only explicit, minimal, JSON-serializable props across the Server-to-Client boundary.
 - **Server Actions & Route Handlers:** Authenticate and authorize the caller inside every `'use server'` action and `route.ts` handler (never trust client-supplied user/tenant IDs or hidden inputs), validate payloads with a strict schema (e.g., `zod`), and call `revalidatePath` / `revalidateTag` intentionally after mutations.
-- **Streaming & Error Boundaries:** Wrap slow non-critical async subtrees in `<Suspense>` with lightweight fallbacks, and handle expected missing records with `notFound()` and recoverable failures with segment `error.tsx` boundaries.
+- **Streaming & Error Boundaries:** Wrap slow non-critical async subtrees in `<Suspense>` with lightweight fallbacks, and handle expected missing records with `notFound()` and recoverable failures with segment `error.tsx` / `global-error.tsx` boundaries (which must declare `'use client'` because React Error Boundaries are Client Components).
 
 ## 2. TypeScript Strictness
 

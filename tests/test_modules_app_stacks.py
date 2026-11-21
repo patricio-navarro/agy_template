@@ -126,6 +126,8 @@ class TestAppStackModules(unittest.TestCase):
             self.assertIn('[ -f "package.json" ]', ci_yml)
             self.assertIn("actions/setup-node@v4", ci_yml)
             self.assertIn('node-version: "22"', ci_yml)
+            self.assertIn("hashFiles('package-lock.json')", ci_yml)
+            self.assertNotIn("cache: 'npm'", ci_yml)
 
             dependabot = (out_dir / ".github" / "dependabot.yml").read_text(encoding="utf-8")
             self.assertEqual(dependabot.count('- package-ecosystem: "npm"'), 1)
@@ -151,6 +153,29 @@ class TestAppStackModules(unittest.TestCase):
             self.assertNotIn("- parallel:", pipelines)
             self.assertIn("image: node:22-slim", pipelines)
             self.assertIn('[ -f "package.json" ]', pipelines)
+            self.assertIn("- node", pipelines)
+            self.assertNotIn("- npm", pipelines)
+
+            # GitLab CI also keeps a single deduplicated node-workspace job
+            gl_dir = Path(tmp) / "next-node-gl"
+            _run_init(
+                gl_dir,
+                "--frontend",
+                "nextjs-ts",
+                "--backend",
+                "node-express-ts",
+                "--data",
+                "none",
+                "--cloud",
+                "none",
+                "--issue-tracker",
+                "github-issues",
+                "--git-hosting",
+                "gitlab",
+            )
+            gitlab_ci = (gl_dir / ".gitlab-ci.yml").read_text(encoding="utf-8")
+            self.assertEqual(gitlab_ci.count("node-workspace:"), 1)
+            self.assertIn("[ -f package.json ]", gitlab_ci)
 
             # Hook scripts staged and executable
             fe_hook = out_dir / ".githooks" / "pre-commit.d" / "20-frontend-check.sh"
@@ -245,6 +270,9 @@ class TestAppStackModules(unittest.TestCase):
             ci_yml = (out_dir / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
             self.assertIn("node-workspace:", ci_yml)
             self.assertIn("backend-go:", ci_yml)
+            self.assertIn("uses: actions/setup-go@v5", ci_yml)
+            self.assertIn('go-version: "1.23"', ci_yml)
+            self.assertIn("hashFiles('go.sum')", ci_yml)
             self.assertIn('[ -f "go.mod" ]', ci_yml)
             self.assertIn("go vet ./...", ci_yml)
             self.assertIn("golangci-lint run", ci_yml)
@@ -287,6 +315,8 @@ class TestAppStackModules(unittest.TestCase):
             )
             pipelines = (bb_dir / "bitbucket-pipelines.yml").read_text(encoding="utf-8")
             self.assertIn("image: golang:1.23", pipelines)
+            self.assertIn("definitions:\n  caches:\n    gomod: /go/pkg/mod", pipelines)
+            self.assertIn("- gomod", pipelines)
             self.assertIn('[ -f "go.mod" ]', pipelines)
             self.assertIn("go test -race ./...", pipelines)
 
@@ -465,6 +495,89 @@ class TestAppStackModules(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(ok_fmt.returncode, 0, msg=ok_fmt.stderr + ok_fmt.stdout)
+
+            # Stub gofmt returning non-zero exit code (syntax error) must fail the commit
+            stub_gofmt.write_text(
+                "#!/usr/bin/env bash\n"
+                "echo 'syntax error' >&2\n"
+                "exit 2\n",
+                encoding="utf-8",
+            )
+            stub_gofmt.chmod(0o755)
+            bad_go.write_text("package main\nfunc broken(\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "main.go"], check=True, capture_output=True)
+            fail_syntax = subprocess.run(
+                ["git", "-C", str(repo), "commit", "-m", "feat(#1): go syntax error"],
+                cwd=repo,
+                env=hook_env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(fail_syntax.returncode, 0)
+
+            # When gofmt is absent from PATH, hook skips cleanly (Day-0 compatibility)
+            no_go_bin = Path(tmp) / "empty-bin"
+            no_go_bin.mkdir()
+            for tool in ("git", "grep", "bash"):
+                tool_path = shutil.which(tool)
+                if tool_path:
+                    (no_go_bin / tool).symlink_to(tool_path)
+            no_gofmt_env = dict(os.environ, PATH=f"{no_go_bin}:/usr/bin:/bin")
+            if shutil.which("gofmt") is None:
+                skip_res = subprocess.run(
+                    ["bash", str(go_hook)],
+                    cwd=repo,
+                    env=no_gofmt_env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(skip_res.returncode, 0, msg=skip_res.stderr + skip_res.stdout)
+            else:
+                skip_res = subprocess.run(
+                    ["bash", str(go_hook)],
+                    cwd=repo,
+                    env=dict(os.environ, PATH=str(no_go_bin)),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(skip_res.returncode, 0, msg=skip_res.stderr + skip_res.stdout)
+
+    def test_java_spring_missing_build_tool_fails_when_manifest_present(self) -> None:
+        catalog = agy_init.load_catalog()
+        job = catalog.modules["backend"]["java-spring"].raw["ci_jobs"][0]
+        step_run = job["steps"][0]["run"]
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            (project / "pom.xml").write_text("<project/>\n", encoding="utf-8")
+            # Minimal PATH without mvn or ./mvnw
+            empty_bin = project / "empty-bin"
+            empty_bin.mkdir()
+            res = subprocess.run(
+                ["/bin/bash", "-euo", "pipefail", "-c", step_run],
+                cwd=project,
+                env={"PATH": str(empty_bin)},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("neither ./mvnw nor mvn is available", res.stderr)
+
+            (project / "pom.xml").unlink()
+            (project / "build.gradle.kts").write_text("plugins {}\n", encoding="utf-8")
+            res_gradle = subprocess.run(
+                ["/bin/bash", "-euo", "pipefail", "-c", step_run],
+                cwd=project,
+                env={"PATH": str(empty_bin)},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(res_gradle.returncode, 0)
+            self.assertIn("neither ./gradlew nor gradle is available", res_gradle.stderr)
 
     def test_inplace_init_nextjs_and_java_spring_prunes_scaffolding(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

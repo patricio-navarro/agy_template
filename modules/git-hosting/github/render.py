@@ -35,7 +35,9 @@ def _render_runtime_steps(runtimes: dict[str, Any], caches: list[str]) -> list[s
             ]
         )
         if key == "node" and "npm" in caches:
-            lines.append("          cache: 'npm'")
+            lines.append("          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}")
+        elif key == "go":
+            lines.append("          cache: ${{ hashFiles('go.sum') != '' }}")
     return lines
 
 

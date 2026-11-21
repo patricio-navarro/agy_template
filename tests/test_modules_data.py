@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -65,7 +64,7 @@ MODULE_EXPECTATIONS = {
             'ALLOYDB_USER=""',
             'ALLOYDB_DB="order-platform"',
             'ALLOYDB_USE_IAM_AUTH="true"',
-            'DATABASE_URL="postgresql://127.0.0.1:5432/order-platform"',
+            'ALLOYDB_DATABASE_URL="postgresql://127.0.0.1:5432/order-platform"',
         ],
         "gitignore": [],
         "rule_ids": {
@@ -213,16 +212,18 @@ class TestDataModules(unittest.TestCase):
 
         adversarial_inputs = [
             "psql " * 1500,
+            "; echo DROP TABLE " * 1000,
+            "; psql -c '" * 1000,
+            "; psql -a -b -c -d -e -f -g -h -i -j -k -l " * 400,
             "A=1 " * 1500,
             "docker compose exec -a -b -c -d db " * 400,
             "supabase db reset " + "--flag " * 1500,
             "gcloud alpha alloydb clusters " * 400,
             "echo " + "DROP TABLE " * 1000,
-            "git commit -m '" + "dropdb supabase db push gcloud alloydb " * 250 + "'",
+            'git commit -m \'' + "dropdb supabase db push gcloud alloydb " * 250 + "'",
         ]
 
-        for mod_id in ("firebase", *NEW_DATA_MODULES):
-            guard_path = REPO_ROOT / "modules" / "data" / mod_id / "hooks" / "guard_rules.json"
+        for guard_path in sorted((REPO_ROOT / "modules").glob("*/*/hooks/guard_rules.json")):
             errors: list[str] = []
             agy_init.validate_guard_rules_file(guard_path, errors)
             self.assertEqual(errors, [], f"Guard validation errors in {guard_path}: {errors}")
@@ -243,7 +244,7 @@ class TestDataModules(unittest.TestCase):
                         elapsed_ms = (time.perf_counter() - start) * 1000.0
                         self.assertLess(
                             elapsed_ms,
-                            50.0,
+                            20.0,
                             f"Regex backtracking risk in {guard_path} ({rule['id']}.{key}): {elapsed_ms:.1f}ms",
                         )
 
@@ -306,6 +307,16 @@ class TestDataModules(unittest.TestCase):
                 self.assertLess(len(agents_md.encode("utf-8")), agy_init.MAX_AGENTS_MD_BYTES)
 
                 env_example = (out_dir / ".env.example").read_text(encoding="utf-8")
+                declared_env_keys = [
+                    line.split("=", 1)[0].strip()
+                    for line in env_example.splitlines()
+                    if line.strip() and not line.strip().startswith("#") and "=" in line
+                ]
+                self.assertEqual(
+                    len(declared_env_keys),
+                    len(set(declared_env_keys)),
+                    f"Duplicate .env.example keys for {combo}: {declared_env_keys}",
+                )
                 stack_profile = (out_dir / ".agents" / "stack-profile.md").read_text(encoding="utf-8")
                 staged_guard_ids = {
                     r["id"]
@@ -384,21 +395,37 @@ class TestDataModules(unittest.TestCase):
                 "dropdb prod_db",
                 "PGPASSWORD=local dropdb app_db",
                 "echo ok && dropdb app_db",
+                "echo ok\ndropdb prod_db",
+                "docker compose exec -T db dropdb prod_db",
                 "pg_restore --clean -d app_db dump.bak",
                 "pg_restore -c -d app_db dump.bak",
                 "flyway clean",
                 "npx prisma migrate reset",
+                "npx -y prisma migrate reset",
+                "pnpm dlx drizzle-kit drop",
+                "bunx prisma db push --force-reset",
                 "prisma db push --force-reset",
                 "prisma db push --accept-data-loss",
                 "alembic downgrade base",
+                "alembic -c prod.ini downgrade base",
                 "npx drizzle-kit drop",
                 'psql "$DATABASE_URL" -c "DROP DATABASE app;"',
+                'psql "$DATABASE_URL" -c "BEGIN; DROP TABLE users; COMMIT;"',
+                'psql -c "SET lock_timeout = \'2s\'; DROP TABLE users;"',
                 'psql -c "drop table users;"',
+                'psql -c"DROP TABLE users;"',
+                'psql --command="BEGIN; DROP TABLE users;"',
                 'psql -c "TRUNCATE TABLE sessions;"',
                 'DATABASE_URL=postgres://localhost/app psql -c "DROP SCHEMA public CASCADE;"',
                 'docker compose exec -T db psql -U postgres -c "DROP TABLE orders;"',
+                'docker compose exec -u postgres db psql -c "DROP TABLE users;"',
+                'docker exec -e PGPASSWORD=x db psql -c "TRUNCATE TABLE sessions;"',
                 'echo "DROP DATABASE app;" | psql "$DATABASE_URL"',
+                'echo -e "DROP TABLE users;" | psql',
+                'echo "BEGIN; DROP TABLE users;" | psql',
+                'printf "%s\\n" "DROP TABLE users;" | psql',
                 "printf 'TRUNCATE users;' | docker exec -i db psql -U postgres",
+                'echo ok\npsql -c "DROP TABLE users;"',
             ]
             for cmd in should_gate:
                 with self.subTest(gated_cmd=cmd):
@@ -409,6 +436,9 @@ class TestDataModules(unittest.TestCase):
                 'pg_isready -d "postgresql://127.0.0.1:5432/order-platform"',
                 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT 1;"',
                 "psql -f migrations/001_init.sql",
+                'psql -c "SELECT 1;" && echo "DROP TABLE"',
+                'echo "DROP TABLE docs" && echo "SELECT 1;" | psql',
+                'echo "DROP TABLE reminder"; cat healthcheck.sql | psql',
                 "pg_dump -Fc app_db > app.dump",
                 "pg_restore -Fc -d app_db app.dump",
                 "alembic upgrade head",
@@ -429,9 +459,15 @@ class TestDataModules(unittest.TestCase):
                 "supabase db push",
                 "supabase db push --linked",
                 "npx -y supabase db push",
+                "pnpm dlx supabase --workdir ./app db push",
+                "bunx supabase db push --linked",
+                "supabase db push --dry-run && supabase db push",
+                'echo "--dry-run" && supabase db push',
+                "echo ok\nsupabase db push",
                 "SUPABASE_ACCESS_TOKEN=tok supabase db push",
                 "echo ready && supabase db push --linked",
                 "supabase db reset --linked",
+                "supabase --workdir ./app db reset --linked",
                 "supabase db reset --db-url postgresql://postgres@db.example.supabase.co:5432/postgres",
                 "supabase projects delete abcdefghijklmnopqrst",
                 "supabase functions delete billing-webhook",
@@ -451,6 +487,7 @@ class TestDataModules(unittest.TestCase):
                 "supabase db reset --local",
                 "supabase test db",
                 "supabase db push --dry-run",
+                "supabase db push --linked --dry-run",
                 "supabase migration new add_orders_rls",
                 'git commit -m "docs: guard supabase db push and linked reset"',
             ]
@@ -465,12 +502,15 @@ class TestDataModules(unittest.TestCase):
 
             should_gate = [
                 "gcloud alloydb clusters delete prod-cluster --region=us-central1",
+                "gcloud --project=prod alloydb clusters delete prod-cluster --region=us-central1",
+                "gcloud -q alloydb instances delete prod-primary --cluster=prod-cluster --region=us-central1",
                 "gcloud beta alloydb instances delete prod-primary --cluster=prod-cluster --region=us-central1",
                 "gcloud alloydb backups delete daily-bkp --region=us-central1",
                 "gcloud alpha alloydb users delete app-sa --cluster=prod-cluster --region=us-central1",
                 "CLOUDSDK_CORE_PROJECT=prod gcloud alloydb clusters delete prod-cluster --region=us-central1",
-                "echo ok && gcloud alloydb clusters failover prod-cluster --region=us-central1",
-                "gcloud alloydb clusters promote secondary-cluster --region=us-east1",
+                "echo ok && gcloud alloydb instances failover prod-primary --cluster=prod-cluster --region=us-central1",
+                "echo ok\ngcloud alloydb instances failover prod-primary --cluster=prod-cluster --region=us-central1",
+                "gcloud --project=prod beta alloydb clusters promote secondary-cluster --region=us-east1",
                 "gcloud alloydb clusters restore prod-cluster --backup=daily-bkp --region=us-central1",
             ]
             for cmd in should_gate:

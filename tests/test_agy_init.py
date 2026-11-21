@@ -637,6 +637,20 @@ class TestAgyTemplate(unittest.TestCase):
         self.assertIn("APP_ENV=development", merged_env)
         self.assertIn("LOG_LEVEL=INFO", merged_env)
         self.assertEqual(agy_init._merge_text_lines("", "A=1\n"), "A=1\n")
+        self.assertEqual(agy_init._merge_text_lines("   \n  \n", "A=1\n"), "A=1\n")
+
+        # When all keys already exist, no orphan top-level banner or section header is appended
+        existing_full = "NODE_ENV=production\nPORT=4000\n"
+        staged_full = (
+            "# Environment variables for Studio App (studio-app)\n\n"
+            "# Backend (Node.js / Express)\n"
+            "NODE_ENV=development\n"
+            "PORT=3000\n"
+        )
+        self.assertEqual(
+            agy_init._merge_text_lines(existing_full, staged_full, dedupe_env_keys=True, blank_separator=True),
+            existing_full,
+        )
 
     def test_brownfield_preserves_readme_and_docs_and_merges_gitignore_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1056,6 +1070,8 @@ class TestAgyTemplate(unittest.TestCase):
             )
             (app_repo / "README.md").write_text("# Keep Me\n", encoding="utf-8")
             (app_repo / ".gitignore").write_text("my-cache/\n", encoding="utf-8")
+            existing_env = (app_repo / ".env.example").read_text(encoding="utf-8")
+            self.assertIn("APP_ENV=development", existing_env)
 
             dry = subprocess.run(
                 [str(AGY_INIT), "--git-hosting", "bitbucket", "--dry-run"],
@@ -1068,6 +1084,7 @@ class TestAgyTemplate(unittest.TestCase):
             summary = json.loads(dry.stdout)
             self.assertIn("README.md", summary["preserved_files"])
             self.assertIn("docs/README.md", summary["preserved_files"])
+            self.assertIn(".env.example", summary["preserved_files"])
             self.assertIn(".gitignore", summary["merged_files"])
             self.assertIn(".github/workflows/ci.yml", summary["stale_files_to_prune"])
             self.assertIn(".agents/skills/git-github-pr", summary["stale_files_to_prune"])
@@ -1325,6 +1342,251 @@ class TestAgyTemplate(unittest.TestCase):
             self.assertFalse((app_repo / ".gitlab" / "merge_request_templates").exists())
             self.assertEqual((app_repo / ".gitlab" / "CODEOWNERS").read_text(encoding="utf-8"), "* @backend-team\n")
             self.assertTrue((app_repo / "bitbucket-pipelines.yml").is_file())
+
+    def test_active_skills_path_traversal_and_symlinks_blocked_in_pruning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app_repo = (Path(tmp) / "traversal-app").resolve()
+            app_repo.mkdir()
+            _git_init(app_repo)
+
+            subprocess.run(
+                [str(AGY_INIT), "--backend", "python-fastapi", "--git-hosting", "github", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            # Direct unit contract: _resolve_lexical_subpath and prune_stale_harness_files block escapes and root targets
+            for bad_dir in (Path("../../src"), Path("../.."), Path("."), Path(".agents/skills"), Path(".agents/skills/.")):
+                with self.assertRaises(agy_init.InitError):
+                    agy_init.prune_stale_harness_files(app_repo, [], [bad_dir])
+
+            # Malicious active_skills in manifest must not touch src/ or custom skills
+            (app_repo / "src").mkdir()
+            (app_repo / "src" / "app.py").write_text("print('keep')\n", encoding="utf-8")
+            custom_skill = app_repo / ".agents" / "skills" / "custom-user"
+            custom_skill.mkdir(parents=True)
+            (custom_skill / "SKILL.md").write_text("---\nname: custom-user\ndescription: Custom.\n---\n", encoding="utf-8")
+
+            manifest_path = app_repo / ".agy-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["active_skills"].extend(["../../src", "../..", ".", "../other"])
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            proc = subprocess.run(
+                [str(AGY_INIT), "--backend", "none", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+            self.assertTrue((app_repo / "src" / "app.py").is_file())
+            self.assertTrue((custom_skill / "SKILL.md").is_file())
+
+            # Symlinks in stale skill dirs or stale files must unlink the symlink, never the target
+            user_docs = app_repo / "user-docs"
+            user_docs.mkdir()
+            (user_docs / "doc.txt").write_text("important\n", encoding="utf-8")
+            real_deploy = app_repo / "real_deploy.sh"
+            real_deploy.write_text("#!/bin/sh\necho keep\n", encoding="utf-8")
+
+            subprocess.run(
+                [str(AGY_INIT), "--backend", "python-fastapi", "--cloud", "gcp-cloudrun", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            stale_skill_dir = app_repo / ".agents" / "skills" / "backend-python-fastapi"
+            shutil.rmtree(stale_skill_dir)
+            stale_skill_dir.symlink_to(Path("../..") / "user-docs")
+
+            stale_deploy = app_repo / "scripts" / "deploy.sh"
+            stale_deploy.unlink()
+            stale_deploy.symlink_to(Path("..") / "real_deploy.sh")
+
+            dry = subprocess.run(
+                [str(AGY_INIT), "--backend", "none", "--cloud", "none", "--dry-run"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(dry.returncode, 0, msg=dry.stderr + dry.stdout)
+            dry_summary = json.loads(dry.stdout)
+            self.assertIn(".agents/skills/backend-python-fastapi", dry_summary["stale_files_to_prune"])
+            self.assertIn("scripts/deploy.sh", dry_summary["stale_files_to_prune"])
+
+            reinit = subprocess.run(
+                [str(AGY_INIT), "--backend", "none", "--cloud", "none", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(reinit.returncode, 0, msg=reinit.stderr + reinit.stdout)
+            self.assertFalse(stale_skill_dir.is_symlink())
+            self.assertFalse(stale_deploy.is_symlink())
+            self.assertEqual((user_docs / "doc.txt").read_text(encoding="utf-8"), "important\n")
+            self.assertEqual(real_deploy.read_text(encoding="utf-8"), "#!/bin/sh\necho keep\n")
+
+            # Symlink ancestor blocks both --dry-run and real execution identically
+            outside_dir = Path(tmp) / "outside-dir"
+            outside_dir.mkdir()
+            subprocess.run(
+                [str(AGY_INIT), "--cloud", "gcp-cloudrun", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            shutil.rmtree(app_repo / "scripts")
+            (app_repo / "scripts").symlink_to(outside_dir)
+
+            dry_sym = subprocess.run(
+                [str(AGY_INIT), "--cloud", "none", "--dry-run"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            real_sym = subprocess.run(
+                [str(AGY_INIT), "--cloud", "none", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(dry_sym.returncode, 0)
+            self.assertNotEqual(real_sym.returncode, 0)
+            self.assertIn("Error:", dry_sym.stderr)
+            self.assertIn("Error:", real_sym.stderr)
+
+    def test_corrupt_manifest_field_types_exit_cleanly(self) -> None:
+        bad_manifests = [
+            {"selected_modules": ["python-fastapi"]},
+            {"parameters": ["bad"]},
+            {"active_skills": 123},
+            {"active_skills": "backend-python-fastapi"},
+            {"project_name": 42},
+        ]
+        for idx, payload in enumerate(bad_manifests):
+            with self.subTest(case=idx), tempfile.TemporaryDirectory() as tmp:
+                app_repo = (Path(tmp) / "bad-types").resolve()
+                app_repo.mkdir()
+                (app_repo / ".agy-manifest.json").write_text(json.dumps(payload), encoding="utf-8")
+
+                proc = subprocess.run(
+                    [str(AGY_INIT), "--yes"],
+                    cwd=app_repo,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("Error:", proc.stderr)
+                self.assertNotIn("Traceback", proc.stderr)
+
+    def test_unknown_or_removed_modules_in_old_manifest_handled_gracefully(self) -> None:
+        catalog = agy_init.load_catalog()
+        parser = agy_init.build_arg_parser(catalog)
+        with tempfile.TemporaryDirectory() as tmp:
+            app_repo = (Path(tmp) / "old-manifest").resolve()
+            app_repo.mkdir()
+            (app_repo / ".agy-manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "project_name": "Legacy App",
+                        "selected_modules": {
+                            "frontend": ["removed-ui"],
+                            "backend": ["python-fastapi", "node-express-ts"],
+                            "issue-tracker": ["github-issues"],
+                            "git-hosting": ["removed-git"],
+                            "obsolete-cat": ["anything"],
+                        },
+                        "parameters": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            proc = subprocess.run(
+                [str(AGY_INIT), "--cloud", "gcp-cloudrun", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+            self.assertIn("Warning:", proc.stderr)
+            manifest = json.loads((app_repo / ".agy-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["selected_modules"]["frontend"], [])
+            self.assertEqual(manifest["selected_modules"]["backend"], ["python-fastapi"])
+            self.assertEqual(manifest["selected_modules"]["cloud"], ["gcp-cloudrun"])
+            self.assertEqual(manifest["selected_modules"]["git-hosting"], ["github"])
+
+            # Interactive mode with single-select manifest having 2 valid IDs returns only [0] on Enter
+            args_interactive = parser.parse_args([])
+            answers = iter(["", "", "", "", "", "", ""])
+            with (
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(io.StringIO()),
+                mock.patch("sys.stdin.isatty", return_value=True),
+                mock.patch("builtins.input", side_effect=lambda _prompt="": next(answers)),
+            ):
+                _, i_sel, _ = agy_init._resolve_init_inputs(args_interactive, catalog, "fallback", target_dir=app_repo)
+            self.assertEqual(i_sel["backend"], ["python-fastapi"])
+
+    def test_cli_single_category_deselect_duplicate_multiselect_and_output_dir_reinit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = (Path(tmp) / "out-reinit").resolve()
+            out_dir.mkdir()
+            (out_dir / "README.md").write_text("# Existing Project\n", encoding="utf-8")
+
+            first = subprocess.run(
+                [
+                    str(AGY_INIT),
+                    "--project-name",
+                    "Out App",
+                    "--backend",
+                    "python-fastapi",
+                    "--data",
+                    "firebase,firebase",
+                    "--cloud",
+                    "gcp-cloudrun",
+                    "--output-dir",
+                    str(out_dir),
+                    "--yes",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(first.returncode, 0, msg=first.stderr + first.stdout)
+            manifest1 = json.loads((out_dir / ".agy-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest1["selected_modules"]["data"], ["firebase"])
+            rule_ids = [r["id"] for r in agy_init.load_json(out_dir / ".agents" / "hooks" / "guard_rules.json")["command_rules"]]
+            self.assertEqual(len(rule_ids), len(set(rule_ids)))
+
+            # Re-init via --output-dir deselecting only cloud preserves backend and data
+            second = subprocess.run(
+                [str(AGY_INIT), "--cloud", "none", "--output-dir", str(out_dir), "--yes"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(second.returncode, 0, msg=second.stderr + second.stdout)
+            manifest2 = json.loads((out_dir / ".agy-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest2["selected_modules"]["backend"], ["python-fastapi"])
+            self.assertEqual(manifest2["selected_modules"]["data"], ["firebase"])
+            self.assertEqual(manifest2["selected_modules"]["cloud"], [])
+            self.assertFalse((out_dir / "scripts" / "deploy.sh").exists())
+            self.assertEqual((out_dir / "README.md").read_text(encoding="utf-8"), "# Existing Project\n")
 
 
 if __name__ == "__main__":

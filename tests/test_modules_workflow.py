@@ -324,10 +324,10 @@ class TestWorkflowModules(unittest.TestCase):
         self.assertIn("go-service:", ci_yml)
         self.assertIn("image: golang:1.23", ci_yml)
         self.assertIn(".go/pkg/mod/", ci_yml)
-        self.assertIn('if [ -f "go.mod" ]; then', ci_yml)
+        self.assertIn("if [ -f go.mod ]; then", ci_yml)
         self.assertIn("firebase-rules:", ci_yml)
         self.assertIn("nodesource.com/setup_22.x", ci_yml)
-        self.assertIn('if [ -f "firestore.rules" ] || [ -f "package.json" ]; then', ci_yml)
+        self.assertIn("if [ -f firestore.rules ] || [ -f package.json ]; then", ci_yml)
         self.assertIn("lint-docs:", ci_yml)
         self.assertIn("echo status: ok", ci_yml)
         # GitLab CI rejects `name:` as a job-level keyword
@@ -398,6 +398,56 @@ class TestWorkflowModules(unittest.TestCase):
                 )
                 self.assertEqual(exec_res.returncode, 0, msg=exec_res.stderr + exec_res.stdout)
                 self.assertIn("skipping step on Day-0 harness", exec_res.stdout)
+
+            # Real-catalog Day-0 verification for nextjs-ts, go-service, java-spring, and empty ci_jobs
+            extra_profiles = [
+                ("next-go", "nextjs-ts", "go-service", 2),
+                ("spring-only", "none", "java-spring", 1),
+                ("empty-ci", "none", "none", 0),
+            ]
+            for label, fe, be, expected_blocks in extra_profiles:
+                with self.subTest(profile=label):
+                    prof_dir = Path(tmp) / f"gitlab-{label}"
+                    res = _run_init(
+                        [
+                            "--project-name",
+                            f"Day0 {label}",
+                            "--frontend",
+                            fe,
+                            "--backend",
+                            be,
+                            "--data",
+                            "none",
+                            "--cloud",
+                            "none",
+                            "--issue-tracker",
+                            "linear",
+                            "--git-hosting",
+                            "gitlab",
+                            "--output-dir",
+                            str(prof_dir),
+                            "--yes",
+                        ],
+                        cwd=REPO_ROOT,
+                    )
+                    self.assertEqual(res.returncode, 0, msg=res.stderr + res.stdout)
+                    prof_ci = (prof_dir / ".gitlab-ci.yml").read_text(encoding="utf-8")
+                    prof_blocks = re.findall(r"(if \[ -f [^\n]+\n(?:      .*\n)+?      fi)", prof_ci)
+                    self.assertEqual(len(prof_blocks), expected_blocks)
+                    for blk in prof_blocks:
+                        dedented = "\n".join(line[6:] if line.startswith("      ") else line for line in blk.splitlines())
+                        exec_res = subprocess.run(
+                            ["bash", "-euo", "pipefail"],
+                            input=dedented,
+                            cwd=day0_empty_dir,
+                            text=True,
+                            capture_output=True,
+                            check=False,
+                        )
+                        self.assertEqual(exec_res.returncode, 0, msg=exec_res.stderr + exec_res.stdout)
+                        self.assertIn("skipping step on Day-0 harness", exec_res.stdout)
+                    if expected_blocks == 0:
+                        self.assertIn("\nhygiene:\n", prof_ci)
 
     def test_inplace_gitlab_linear_prunes_github_and_bitbucket(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -512,11 +562,18 @@ class TestWorkflowModules(unittest.TestCase):
             for gated_cmd in (
                 "glab mr merge",
                 "glab mr merge 42 --squash --remove-source-branch",
+                "glab mr -R group/repo merge 42",
+                "glab mr --repo=group/repo accept 42",
+                "GITLAB_HOST=gitlab.corp.com glab mr merge 42",
+                "  glab mr merge 42",
+                "git status\nglab mr merge 42",
                 "glab mr accept 42",
                 "git push && glab mr merge 42",
                 "glab repo delete my-group/my-repo",
+                "glab project delete my-group/my-repo",
                 "glab api -X PUT projects/1/merge_requests/42/merge",
                 "curl -X POST https://gitlab.com/api/v4/projects/1/merge_requests/42/merge",
+                "GITLAB_TOKEN=abc curl -X PUT https://gitlab.com/api/v4/projects/1/merge_requests/42/merge",
             ):
                 self.assertEqual(run_guard(gated_cmd)["decision"], "force_ask", msg=gated_cmd)
 
@@ -526,6 +583,9 @@ class TestWorkflowModules(unittest.TestCase):
                 "glab mr note 42 --message 'APPROVED'",
                 "glab ci status",
                 "glab api projects/1/merge_requests/42",
+                "glab api projects/1/merge_requests/42/merge_ref",
+                "glab api projects/1/merge_requests/42; echo /merge",
+                "echo 'glab mr merge 42'",
             ):
                 self.assertEqual(run_guard(allowed_cmd)["decision"], "allow", msg=allowed_cmd)
 
