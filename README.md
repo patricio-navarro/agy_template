@@ -51,6 +51,8 @@ Launch the interactive wizard:
 ./agy-init
 ```
 
+`agy-init` always targets your **current working directory** by default (or pass `--output-dir <path>`). Running `/path/to/agy_template/agy-init` from inside another repository initializes that repository in-place without modifying the `agy_template` source repo.
+
 Want to see what will be created and removed before touching disk? Add `--dry-run`. You can also list options with `./agy-init --list-modules`, or pass flags directly:
 
 ```sh
@@ -92,7 +94,7 @@ Want to see what will be created and removed before touching disk? Add `--dry-ru
 - **CI/CD & PR Templates:** Ready-to-run `.github/workflows/ci.yml` + Dependabot, or `bitbucket-pipelines.yml` + `.bitbucket/pull_request_template.md`.
 - **Cloud Scripts:** Idempotent `scripts/provision.sh` and `scripts/deploy.sh` with Secret Manager and Sandbox/Production parity when Cloud Run is selected.
 
-Once initialization finishes, `agy-init`, `core/`, `modules/`, and `tests/` remove themselves automatically—no leftover template scaffolding.
+When initializing an `agy_template` clone in-place, `agy-init`, `core/`, `modules/`, and `tests/` remove themselves automatically—no leftover template scaffolding (existing folders are preserved when initializing a separate repository).
 
 ---
 

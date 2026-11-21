@@ -493,6 +493,120 @@ class TestAgyTemplate(unittest.TestCase):
             self.assertIn("Error:", proc.stderr)
             self.assertNotIn("Traceback", proc.stderr)
 
+    def test_invoked_from_other_repo_initializes_cwd_without_touching_template(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            template_copy = _copy_template_repo(tmp_path)
+            app_repo = (tmp_path / "app-repo").resolve()
+            app_repo.mkdir()
+            _git_init(app_repo)
+            (app_repo / "tests").mkdir()
+            (app_repo / "tests" / "existing.txt").write_text("keep me\n", encoding="utf-8")
+
+            proc = subprocess.run(
+                [
+                    str(template_copy / "agy-init"),
+                    "--frontend",
+                    "none",
+                    "--backend",
+                    "python-fastapi",
+                    "--data",
+                    "none",
+                    "--cloud",
+                    "none",
+                    "--issue-tracker",
+                    "github-issues",
+                    "--git-hosting",
+                    "github",
+                    "--yes",
+                ],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+            self.assertIn(str(app_repo), proc.stdout)
+
+            manifest = json.loads((app_repo / ".agy-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["project_slug"], "app-repo")
+            self.assertTrue((app_repo / "AGENTS.md").is_file())
+            self.assertTrue((app_repo / ".github" / "workflows" / "ci.yml").is_file())
+            self.assertEqual((app_repo / "tests" / "existing.txt").read_text(encoding="utf-8"), "keep me\n")
+
+            hooks_path = subprocess.run(
+                ["git", "-C", str(app_repo), "config", "--get", "core.hooksPath"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.assertEqual(hooks_path, ".githooks")
+
+            self.assertTrue((template_copy / "agy-init").is_file())
+            self.assertTrue((template_copy / "modules").is_dir())
+            self.assertTrue((template_copy / "core").is_dir())
+            self.assertFalse((template_copy / ".agy-manifest.json").exists())
+
+    def test_invoked_from_other_template_clone_prunes_cwd_not_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source_dir = tmp_path / "source"
+            target_dir = tmp_path / "target"
+            source_dir.mkdir()
+            target_dir.mkdir()
+            source_template = _copy_template_repo(source_dir)
+            target_clone = _copy_template_repo(target_dir)
+            _git_init(target_clone)
+
+            proc = subprocess.run(
+                [
+                    str(source_template / "agy-init"),
+                    "--project-name",
+                    "Target Clone",
+                    "--frontend",
+                    "none",
+                    "--backend",
+                    "python-fastapi",
+                    "--data",
+                    "none",
+                    "--cloud",
+                    "none",
+                    "--issue-tracker",
+                    "github-issues",
+                    "--git-hosting",
+                    "github",
+                    "--yes",
+                ],
+                cwd=target_clone,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+
+            self.assertTrue((target_clone / ".agy-manifest.json").is_file())
+            self.assertTrue((target_clone / "AGENTS.md").is_file())
+            for pruned in ("agy-init", "modules", "core", "tests"):
+                self.assertFalse((target_clone / pruned).exists(), f"{pruned} should have been pruned from target_clone")
+
+            self.assertTrue((source_template / "agy-init").is_file())
+            self.assertTrue((source_template / "modules").is_dir())
+            self.assertTrue((source_template / "core").is_dir())
+            self.assertFalse((source_template / ".agy-manifest.json").exists())
+
+    def test_refuses_subdir_of_template_repo_without_output_dir(self) -> None:
+        proc = subprocess.run(
+            [str(AGY_INIT), "--backend", "python-fastapi", "--dry-run"],
+            cwd=REPO_ROOT / "scripts",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("Error:", proc.stderr)
+        self.assertIn("--output-dir", proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

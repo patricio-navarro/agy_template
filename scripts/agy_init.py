@@ -210,6 +210,34 @@ def resolve_safe_subpath(root: Path, rel_path: str | Path) -> Path:
     return resolved
 
 
+def _is_template_checkout(path: Path) -> bool:
+    """Return True if path looks like an uninitialized agy_template checkout."""
+    return (
+        (path / "agy-init").is_file()
+        and (path / "scripts" / "agy_init.py").is_file()
+        and (path / "modules" / "categories.json").is_file()
+        and (path / "core" / "templates" / "AGENTS.md.tmpl").is_file()
+    )
+
+
+def resolve_target_dir(
+    output_dir: str | None,
+    cwd: Path | None = None,
+    repo_root: Path = REPO_ROOT,
+) -> tuple[Path, bool]:
+    """Resolve target directory and whether it is an in-place template checkout."""
+    resolved_repo = repo_root.resolve()
+    if output_dir:
+        return Path(output_dir).resolve(), False
+    resolved_cwd = (cwd or Path.cwd()).resolve()
+    if resolved_cwd != resolved_repo and resolved_cwd.is_relative_to(resolved_repo):
+        raise InitError(
+            f"Refusing to initialize inside a subdirectory of the template repo ({resolved_repo}). "
+            "Run from the target repository root or pass --output-dir."
+        )
+    return resolved_cwd, _is_template_checkout(resolved_cwd)
+
+
 def load_renderer(render_py: Path, module_name: str | None = None) -> Callable[[dict[str, Any]], dict[str, str]]:
     """Dynamically import a module's render.py and return its render_files callable."""
     spec = importlib.util.spec_from_file_location(module_name or f"agy_render_{render_py.parent.name}", render_py)
@@ -550,9 +578,12 @@ def interactive_prompt(
     initial_project_name: str,
     initial_selections: Mapping[str, list[str]],
     initial_params: Mapping[str, str],
+    target_dir: Path | None = None,
 ) -> tuple[str, dict[str, list[str]], dict[str, str]]:
     """Run interactive terminal prompts for any unspecified stack categories and parameters."""
     print("\n=== Antigravity Template Initializer (agy_template) ===\n")
+    if target_dir is not None:
+        print(f"Target directory: {target_dir}\n")
     entered_name = input(f"Project name [{initial_project_name}]: ").strip()
     project_name = entered_name or initial_project_name
 
@@ -919,7 +950,7 @@ def build_arg_parser(catalog: Catalog) -> argparse.ArgumentParser:
     parser.add_argument("--param", action="append", default=[], help="Module parameter override (KEY=VALUE). Repeatable.")
     parser.add_argument("--jira-key", help="Convenience alias for --param JIRA_PROJECT_KEY=<KEY>.")
     parser.add_argument("--config", help="Optional JSON file specifying project_name, modules, and parameters.")
-    parser.add_argument("--output-dir", help="Optional target directory to write initialized harness without modifying template repo.")
+    parser.add_argument("--output-dir", help="Optional target directory to write initialized harness (defaults to current working directory).")
     parser.add_argument("--keep-template-engine", action="store_true", help="Keep modules/, core/, and agy-init after init.")
     parser.add_argument("--dry-run", action="store_true", help="Preview changes without writing or deleting files.")
     parser.add_argument("-y", "--yes", action="store_true", help="Run non-interactively without confirmation prompts.")
@@ -953,6 +984,7 @@ def _resolve_init_inputs(
     args: argparse.Namespace,
     catalog: Catalog,
     default_project_name: str,
+    target_dir: Path | None = None,
 ) -> tuple[str, dict[str, list[str]], dict[str, str]]:
     raw_selections: dict[str, list[str]] = {}
     params = parse_param_overrides(args.param, args.jira_key)
@@ -994,14 +1026,16 @@ def _resolve_init_inputs(
     if not sys.stdin.isatty():
         raise InitError("Non-interactive shell requires --yes (or --dry-run) when omitting interactive prompts.", exit_code=2)
 
-    return interactive_prompt(catalog, project_name or default_project_name, raw_selections, params)
+    return interactive_prompt(catalog, project_name or default_project_name, raw_selections, params, target_dir=target_dir)
 
 
 def _execute_init(args: argparse.Namespace, catalog: Catalog) -> int:
-    target_dir = Path(args.output_dir).resolve() if args.output_dir else REPO_ROOT
+    target_dir, is_inplace_template = resolve_target_dir(args.output_dir)
     default_project_name = target_dir.name if target_dir.name != "agy_template" else "my-project"
 
-    final_project_name, raw_selections, params = _resolve_init_inputs(args, catalog, default_project_name)
+    final_project_name, raw_selections, params = _resolve_init_inputs(
+        args, catalog, default_project_name, target_dir=target_dir
+    )
     final_project_slug = slugify(args.project_slug or final_project_name)
     selected_modules, resolved_params = normalize_selections(catalog, raw_selections, params)
 
@@ -1019,18 +1053,18 @@ def _execute_init(args: argparse.Namespace, catalog: Catalog) -> int:
                 "target_dir": str(target_dir),
                 "manifest": manifest,
                 "files_to_write": staged_files,
-                "would_prune_engine": not args.output_dir and not args.keep_template_engine,
+                "would_prune_engine": is_inplace_template and not args.keep_template_engine,
             }
             print(json.dumps(summary, indent=2))
             return 0
 
-        if args.output_dir:
+        if is_inplace_template:
+            prune_template_scaffolding(target_dir, keep_engine=args.keep_template_engine)
+        else:
             target_dir.mkdir(parents=True, exist_ok=True)
             license_src = REPO_ROOT / "LICENSE"
             if license_src.is_file() and not (target_dir / "LICENSE").exists():
                 shutil.copy2(license_src, target_dir / "LICENSE")
-        else:
-            prune_template_scaffolding(target_dir, keep_engine=args.keep_template_engine)
 
         copy_staged_to_target(stage_dir, target_dir)
 
