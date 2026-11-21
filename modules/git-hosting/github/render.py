@@ -5,9 +5,38 @@ from __future__ import annotations
 from typing import Any
 
 
+_RUNTIME_SETUPS: tuple[tuple[str, str, str, str, tuple[str, ...]], ...] = (
+    ("python", "Python", "actions/setup-python@v5", "python-version", ()),
+    ("node", "Node.js", "actions/setup-node@v4", "node-version", ()),
+    ("java", "Java", "actions/setup-java@v4", "java-version", ("distribution: 'temurin'",)),
+    ("go", "Go", "actions/setup-go@v5", "go-version", ()),
+)
+
+
 def _yaml_quote(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+def _render_runtime_steps(runtimes: dict[str, Any], caches: list[str]) -> list[str]:
+    """Render GitHub Actions setup-* steps for runtimes declared by a CI job."""
+    lines: list[str] = []
+    for key, label, action, version_key, extra_with in _RUNTIME_SETUPS:
+        if key not in runtimes:
+            continue
+        ver = runtimes[key]
+        lines.extend(
+            [
+                f"      - name: Set up {label} {ver}",
+                f"        uses: {action}",
+                "        with:",
+                *(f"          {entry}" for entry in extra_with),
+                f"          {version_key}: {_yaml_quote(str(ver))}",
+            ]
+        )
+        if key == "node" and "npm" in caches:
+            lines.append("          cache: 'npm'")
+    return lines
 
 
 def _render_guard_condition(guard_files: list[str]) -> str:
@@ -71,30 +100,7 @@ def _render_ci_yml(ci_jobs: list[dict[str, Any]]) -> str:
         lines.append("    steps:")
         lines.append("      - name: Checkout repository")
         lines.append("        uses: actions/checkout@v4")
-
-        if "python" in runtimes:
-            py_ver = runtimes["python"]
-            lines.append(f"      - name: Set up Python {py_ver}")
-            lines.append("        uses: actions/setup-python@v5")
-            lines.append("        with:")
-            lines.append(f"          python-version: {_yaml_quote(str(py_ver))}")
-
-        if "node" in runtimes:
-            node_ver = runtimes["node"]
-            lines.append(f"      - name: Set up Node.js {node_ver}")
-            lines.append("        uses: actions/setup-node@v4")
-            lines.append("        with:")
-            lines.append(f"          node-version: {_yaml_quote(str(node_ver))}")
-            if "npm" in caches:
-                lines.append("          cache: 'npm'")
-
-        if "java" in runtimes:
-            java_ver = runtimes["java"]
-            lines.append(f"      - name: Set up Java {java_ver}")
-            lines.append("        uses: actions/setup-java@v4")
-            lines.append("        with:")
-            lines.append("          distribution: 'temurin'")
-            lines.append(f"          java-version: {_yaml_quote(str(java_ver))}")
+        lines.extend(_render_runtime_steps(runtimes, caches))
 
         guard_cond = _render_guard_condition(guard_files)
         for step in steps:

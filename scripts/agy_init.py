@@ -63,6 +63,8 @@ PRUNE_ALWAYS_PATHS = (
     ".github",
     ".bitbucket",
     "bitbucket-pipelines.yml",
+    ".gitlab",
+    ".gitlab-ci.yml",
 )
 
 PRUNE_ENGINE_PATHS = (

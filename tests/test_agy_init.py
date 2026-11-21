@@ -73,14 +73,22 @@ class TestAgyTemplate(unittest.TestCase):
             all_module_ids,
             {
                 "react-vite-ts",
+                "nextjs-ts",
                 "python-fastapi",
                 "node-express-ts",
+                "go-service",
+                "java-spring",
                 "firebase",
+                "postgres",
+                "supabase",
+                "alloydb",
                 "gcp-cloudrun",
                 "github-issues",
                 "jira",
+                "linear",
                 "github",
                 "bitbucket",
+                "gitlab",
             },
         )
 
@@ -1086,6 +1094,237 @@ class TestAgyTemplate(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn("Error:", proc.stderr)
             self.assertNotIn("Traceback", proc.stderr)
+
+    def test_github_ci_includes_setup_go_for_go_service(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "go-github-ci"
+            proc = subprocess.run(
+                [
+                    str(AGY_INIT),
+                    "--project-name",
+                    "Go CI Service",
+                    "--frontend",
+                    "none",
+                    "--backend",
+                    "go-service",
+                    "--data",
+                    "none",
+                    "--cloud",
+                    "none",
+                    "--issue-tracker",
+                    "github-issues",
+                    "--git-hosting",
+                    "github",
+                    "--output-dir",
+                    str(out_dir),
+                    "--yes",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+
+            ci_yml = (out_dir / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+            self.assertIn("backend-go:", ci_yml)
+            self.assertIn("Set up Go 1.23", ci_yml)
+            self.assertIn("uses: actions/setup-go@v5", ci_yml)
+            self.assertIn('go-version: "1.23"', ci_yml)
+            self.assertLess(ci_yml.index("uses: actions/setup-go@v5"), ci_yml.index("go vet ./..."))
+            self.assertIn('if [ -f "go.mod" ]; then', ci_yml)
+
+        render_fn = agy_init.load_renderer(REPO_ROOT / "modules" / "git-hosting" / "github" / "render.py")
+        rendered = render_fn(
+            {
+                "ci_jobs": [
+                    {
+                        "id": "custom-go",
+                        "name": "Custom Go",
+                        "runtimes": {"go": "1.22"},
+                        "guard_files": ["go.mod"],
+                        "steps": [{"name": "Test", "run": "go test ./..."}],
+                    }
+                ]
+            }
+        )
+        custom_ci = rendered[".github/workflows/ci.yml"]
+        self.assertIn("Set up Go 1.22", custom_ci)
+        self.assertIn("uses: actions/setup-go@v5", custom_ci)
+        self.assertIn('go-version: "1.22"', custom_ci)
+
+    def test_inplace_init_prunes_stale_gitlab_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _copy_template_repo(Path(tmp))
+            _git_init(repo)
+
+            (repo / ".gitlab" / "merge_request_templates").mkdir(parents=True)
+            (repo / ".gitlab" / "merge_request_templates" / "Default.md").write_text("stale mr\n", encoding="utf-8")
+            (repo / ".gitlab-ci.yml").write_text("stages: [test]\n", encoding="utf-8")
+
+            proc = subprocess.run(
+                [
+                    str(repo / "agy-init"),
+                    "--project-name",
+                    "Prune GitLab Inplace",
+                    "--frontend",
+                    "none",
+                    "--backend",
+                    "go-service",
+                    "--data",
+                    "none",
+                    "--cloud",
+                    "none",
+                    "--issue-tracker",
+                    "github-issues",
+                    "--git-hosting",
+                    "github",
+                    "--yes",
+                ],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr + proc.stdout)
+            self.assertFalse((repo / ".gitlab-ci.yml").exists())
+            self.assertFalse((repo / ".gitlab").exists())
+            self.assertFalse((repo / ".agents" / "skills" / "git-gitlab-mr").exists())
+            self.assertTrue((repo / ".github" / "workflows" / "ci.yml").is_file())
+            self.assertIn("actions/setup-go@v5", (repo / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+
+            # Verify --keep-template-engine also prunes .gitlab and .gitlab-ci.yml when switching away from gitlab
+            kept_repo = _copy_template_repo(Path(tmp) / "kept")
+            _git_init(kept_repo)
+            first = subprocess.run(
+                [
+                    str(kept_repo / "agy-init"),
+                    "--project-name",
+                    "Kept Engine",
+                    "--backend",
+                    "go-service",
+                    "--git-hosting",
+                    "gitlab",
+                    "--keep-template-engine",
+                    "--yes",
+                ],
+                cwd=kept_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(first.returncode, 0, msg=first.stderr + first.stdout)
+            self.assertTrue((kept_repo / ".gitlab-ci.yml").is_file())
+            self.assertTrue((kept_repo / ".gitlab" / "merge_request_templates" / "Default.md").is_file())
+
+            second = subprocess.run(
+                [str(kept_repo / "agy-init"), "--git-hosting", "bitbucket", "--keep-template-engine", "--yes"],
+                cwd=kept_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(second.returncode, 0, msg=second.stderr + second.stdout)
+            self.assertFalse((kept_repo / ".gitlab-ci.yml").exists())
+            self.assertFalse((kept_repo / ".gitlab").exists())
+            self.assertFalse((kept_repo / ".agents" / "skills" / "git-gitlab-mr").exists())
+            self.assertTrue((kept_repo / "bitbucket-pipelines.yml").is_file())
+
+    def test_reinit_switch_away_from_gitlab_prunes_stale_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app_repo = (Path(tmp) / "gitlab-switch-app").resolve()
+            app_repo.mkdir()
+            _git_init(app_repo)
+
+            first = subprocess.run(
+                [
+                    str(AGY_INIT),
+                    "--project-name",
+                    "GitLab Switch App",
+                    "--frontend",
+                    "none",
+                    "--backend",
+                    "go-service",
+                    "--data",
+                    "none",
+                    "--cloud",
+                    "none",
+                    "--issue-tracker",
+                    "linear",
+                    "--param",
+                    "LINEAR_TEAM_KEY=ENG",
+                    "--git-hosting",
+                    "gitlab",
+                    "--yes",
+                ],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(first.returncode, 0, msg=first.stderr + first.stdout)
+            self.assertTrue((app_repo / ".gitlab-ci.yml").is_file())
+            self.assertTrue((app_repo / ".gitlab" / "merge_request_templates" / "Default.md").is_file())
+            self.assertTrue((app_repo / ".agents" / "skills" / "git-gitlab-mr" / "SKILL.md").is_file())
+
+            # Dry-run reports GitLab artifacts as stale without touching disk
+            dry = subprocess.run(
+                [str(AGY_INIT), "--git-hosting", "github", "--dry-run"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(dry.returncode, 0, msg=dry.stderr + dry.stdout)
+            summary = json.loads(dry.stdout)
+            self.assertIn(".gitlab-ci.yml", summary["stale_files_to_prune"])
+            self.assertIn(".gitlab/merge_request_templates/Default.md", summary["stale_files_to_prune"])
+            self.assertIn(".agents/skills/git-gitlab-mr", summary["stale_files_to_prune"])
+            self.assertTrue((app_repo / ".gitlab-ci.yml").is_file())
+
+            # Switching gitlab -> github removes GitLab CI/MR files and empty .gitlab directory cleanly
+            to_github = subprocess.run(
+                [str(AGY_INIT), "--git-hosting", "github", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(to_github.returncode, 0, msg=to_github.stderr + to_github.stdout)
+            self.assertFalse((app_repo / ".gitlab-ci.yml").exists())
+            self.assertFalse((app_repo / ".gitlab").exists())
+            self.assertFalse((app_repo / ".agents" / "skills" / "git-gitlab-mr").exists())
+            self.assertTrue((app_repo / ".agents" / "skills" / "git-github-pr" / "SKILL.md").is_file())
+            self.assertIn("actions/setup-go@v5", (app_repo / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+
+            manifest = json.loads((app_repo / ".agy-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["selected_modules"]["git-hosting"], ["github"])
+            self.assertEqual(manifest["selected_modules"]["backend"], ["go-service"])
+            self.assertEqual(manifest["parameters"], {"LINEAR_TEAM_KEY": "ENG"})
+
+            # Switching github -> gitlab, adding user file under .gitlab/, then switching -> bitbucket preserves user file
+            to_gitlab = subprocess.run(
+                [str(AGY_INIT), "--git-hosting", "gitlab", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(to_gitlab.returncode, 0, msg=to_gitlab.stderr + to_gitlab.stdout)
+            (app_repo / ".gitlab" / "CODEOWNERS").write_text("* @backend-team\n", encoding="utf-8")
+
+            to_bitbucket = subprocess.run(
+                [str(AGY_INIT), "--git-hosting", "bitbucket", "--yes"],
+                cwd=app_repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(to_bitbucket.returncode, 0, msg=to_bitbucket.stderr + to_bitbucket.stdout)
+            self.assertFalse((app_repo / ".gitlab-ci.yml").exists())
+            self.assertFalse((app_repo / ".gitlab" / "merge_request_templates").exists())
+            self.assertEqual((app_repo / ".gitlab" / "CODEOWNERS").read_text(encoding="utf-8"), "* @backend-team\n")
+            self.assertTrue((app_repo / "bitbucket-pipelines.yml").is_file())
 
 
 if __name__ == "__main__":
